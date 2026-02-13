@@ -894,9 +894,9 @@ class Player{
     this.aiming=false;
     this.adsAnim=0; // 0 = hip, 1 = fully aimed
 
-    // Third-person weapon model
+    // Third-person weapon model — parented to right arm pivot
     this.tpWeapon=this._buildTPWeapon();
-    this.model.add(this.tpWeapon);
+    this._armRPivot.add(this.tpWeapon);
   }
   _buildModel(){
     const g=new THREE.Group();
@@ -909,18 +909,31 @@ class Player{
     const legL=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.7,0.25),bodyMat);
     legL.position.set(-0.15,0.45,0); legL.castShadow=true;
     const legR=legL.clone(); legR.position.x=0.15;
+    // Arm pivots at shoulder joints for aiming animation
+    const armLPivot=new THREE.Group();
+    armLPivot.position.set(-0.42,1.45,0);
     const armL=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.6,0.22),bodyMat);
-    armL.position.set(-0.42,1.15,0); armL.castShadow=true;
-    const armR=armL.clone(); armR.position.x=0.42;
-    // Pip-Boy on left forearm (third-person)
+    armL.position.set(0,-0.3,0); armL.castShadow=true;
+    armLPivot.add(armL);
+    const armRPivot=new THREE.Group();
+    armRPivot.position.set(0.42,1.45,0);
+    const armR=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.6,0.22),bodyMat);
+    armR.position.set(0,-0.3,0); armR.castShadow=true;
+    armRPivot.add(armR);
+    // Pip-Boy on left forearm (third-person) — parented to arm pivot
     const pbMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.5,metalness:0.6});
     const pbBody=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.2),pbMat);
-    pbBody.position.set(-0.42,0.95,0.04); pbBody.castShadow=true;
+    pbBody.position.set(0,-0.5,0.04); pbBody.castShadow=true;
+    armLPivot.add(pbBody);
     const pbScreen=new THREE.Mesh(new THREE.PlaneGeometry(0.12,0.08),new THREE.MeshStandardMaterial({color:0x115511,emissive:0x22cc44,emissiveIntensity:0.5,roughness:0.3}));
-    pbScreen.position.set(-0.42,0.958,0.145); pbScreen.castShadow=false;
+    pbScreen.position.set(0,-0.492,0.145); pbScreen.castShadow=false;
+    armLPivot.add(pbScreen);
     const pbGlow=new THREE.PointLight(0x33ff66,0.3,1.5,2);
-    pbGlow.position.set(-0.42,1.0,0.15);
-    g.add(torso,head,legL,legR,armL,armR,pbBody,pbScreen,pbGlow);
+    pbGlow.position.set(0,-0.45,0.15);
+    armLPivot.add(pbGlow);
+    this._armLPivot=armLPivot;
+    this._armRPivot=armRPivot;
+    g.add(torso,head,legL,legR,armLPivot,armRPivot);
     return g;
   }
   _buildFPWeapon(){
@@ -963,8 +976,8 @@ class Player{
     const grip=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.08,0.04),gripMat);
     grip.position.set(0,-0.06,-0.03); grip.rotation.x=0.25; grip.castShadow=true;
     g.add(barrel,body,grip);
-    // Position at right hand area
-    g.position.set(0.42,1.0,0.18);
+    // Position relative to right arm pivot
+    g.position.set(0,-0.45,0.18);
     g.rotation.x=-0.15;
     return g;
   }
@@ -1168,10 +1181,17 @@ class Player{
     this.model.visible=(this.camMode==="tp");
     this.model.position.copy(this.pos);
     this.model.position.y-=1.6;
-    this.model.rotation.y=this.yaw;
+    this.model.rotation.y=this.yaw+Math.PI;
 
     // Third-person weapon visibility
     if(this.tpWeapon) this.tpWeapon.visible=(this.camMode==="tp");
+
+    // Arm aiming animation — rotate arm pivots forward when aiming
+    if(this._armRPivot && this._armLPivot){
+      const aimRot=-this.adsAnim*1.2; // swing arms forward ~69° when fully aimed
+      this._armRPivot.rotation.x=aimRot;
+      this._armLPivot.rotation.x=aimRot;
+    }
 
     // Pip-Boy animation lerp
     const pipTarget=this.pipboyActive?1:0;
@@ -1223,7 +1243,7 @@ class Player{
       const cam=this.pos.clone();
       const adsT=this.adsAnim;
       const dist=lerp(2.5,1.6,adsT);
-      const sideOff=lerp(0.5,0.35,adsT);
+      const sideOff=lerp(0.9,0.55,adsT);
       const heightOff=lerp(0.8,0.5,adsT);
       cam.addScaledVector(back,dist);
       cam.addScaledVector(side,sideOff);
@@ -1704,8 +1724,10 @@ class Game{
   async startNewGame(){
     await this.ensureAudio();
     this.save=defaultSave();
-    // Remove old player model if present
+    // Remove old player model and camera-attached weapons if present
     if(this.player?.model?.parent) this.player.model.parent.remove(this.player.model);
+    if(this.player?.fpWeapon?.parent) this.player.fpWeapon.parent.remove(this.player.fpWeapon);
+    if(this.player?.fpPipboy?.parent) this.player.fpPipboy.parent.remove(this.player.fpPipboy);
     this.player=new Player(this.camera);
     this.scene.add(this.player.model);
     this.quest=this.save.world.quest;

@@ -262,14 +262,18 @@ class Input{
     this.keys=new Map();
     this.just=new Set();
     this.mouse={dx:0,dy:0,locked:false,sens:0.0022};
+    this.mouseButtons=new Map();
     window.addEventListener("keydown",e=>{ if(e.code==="Tab") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
     window.addEventListener("keyup",e=>this.keys.set(e.code,false));
     document.addEventListener("mousemove",e=>{ if(!this.mouse.locked) return; this.mouse.dx+=e.movementX; this.mouse.dy+=e.movementY;});
     document.addEventListener("pointerlockchange",()=>{this.mouse.locked=document.pointerLockElement===this.dom;});
     dom.addEventListener("click",()=>{ if(!this.mouse.locked) dom.requestPointerLock();});
+    window.addEventListener("mousedown",e=>this.mouseButtons.set(e.button,true));
+    window.addEventListener("mouseup",e=>this.mouseButtons.set(e.button,false));
   }
   down(code){return !!this.keys.get(code);}
   pressed(code){ if(this.just.has(code)){ this.just.delete(code); return true;} return false;}
+  mouseDown(button){return !!this.mouseButtons.get(button);}
   consumeMouse(){const {dx,dy}=this.mouse; this.mouse.dx=0; this.mouse.dy=0; return {dx,dy};}
 }
 
@@ -885,6 +889,14 @@ class Player{
     this.camera.add(this.fpPipboy);
     this.pipboyAnim=0; // 0 = stowed, 1 = fully raised
     this.pipboyActive=false;
+
+    // ADS (aim-down-sights) state
+    this.aiming=false;
+    this.adsAnim=0; // 0 = hip, 1 = fully aimed
+
+    // Third-person weapon model
+    this.tpWeapon=this._buildTPWeapon();
+    this.model.add(this.tpWeapon);
   }
   _buildModel(){
     const g=new THREE.Group();
@@ -913,13 +925,14 @@ class Player{
   }
   _buildFPWeapon(){
     const g=new THREE.Group();
-    const metalMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4});
+    const metalMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4,polygonOffset:true,polygonOffsetFactor:-1});
     const gripMat=new THREE.MeshStandardMaterial({color:0x3a2e22,roughness:0.9});
     // barrel
     const barrel=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.04,0.5),metalMat);
-    barrel.position.set(0,0,0.2); barrel.castShadow=true;
+    barrel.position.set(0,0.005,0.2); barrel.castShadow=true; // Y offset prevents z-fighting with body mesh
     // body
-    const body=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.28),metalMat);
+    const bodyMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4,polygonOffset:true,polygonOffsetFactor:1});
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.28),bodyMat);
     body.position.set(0,-0.01,0); body.castShadow=true;
     // grip
     const grip=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.12,0.06),gripMat);
@@ -928,9 +941,31 @@ class Player{
     const handMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
     const hand=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.06,0.1),handMat);
     hand.position.set(0,-0.06,0.02);
-    g.add(barrel,body,grip,hand);
+    // iron sight post (small nub on top of barrel end)
+    const sightMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.5,metalness:0.5});
+    const frontSight=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.02,0.008),sightMat);
+    frontSight.position.set(0,0.035,0.44);
+    const rearSight=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.015,0.008),sightMat);
+    rearSight.position.set(0,0.035,0.05);
+    g.add(barrel,body,grip,hand,frontSight,rearSight);
     g.position.set(0.28,-0.24,-0.4);
     g.rotation.y=0;
+    return g;
+  }
+  _buildTPWeapon(){
+    const g=new THREE.Group();
+    const metalMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4});
+    const barrel=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.03,0.35),metalMat);
+    barrel.position.set(0,0,0.15); barrel.castShadow=true;
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.045,0.06,0.2),metalMat);
+    body.position.set(0,-0.008,0); body.castShadow=true;
+    const gripMat=new THREE.MeshStandardMaterial({color:0x3a2e22,roughness:0.9});
+    const grip=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.08,0.04),gripMat);
+    grip.position.set(0,-0.06,-0.03); grip.rotation.x=0.25; grip.castShadow=true;
+    g.add(barrel,body,grip);
+    // Position at right hand area
+    g.position.set(0.42,1.0,0.18);
+    g.rotation.x=-0.15;
     return g;
   }
   _buildMuzzleFlash(){
@@ -985,14 +1020,29 @@ class Player{
     if(id==="pistol"){
       barrel.scale.set(1,1,0.7); body.scale.set(1,1,0.8);
       this._fpBasePos={x:0.28,y:-0.24,z:-0.4};
+      this._fpAdsPos={x:0.0,y:-0.16,z:-0.35};
     }else if(id==="rifle"){
       barrel.scale.set(1,1,1.4); body.scale.set(1.1,1.1,1.3);
       this._fpBasePos={x:0.25,y:-0.22,z:-0.38};
+      this._fpAdsPos={x:0.0,y:-0.15,z:-0.32};
     }else{
       barrel.scale.set(1.3,1.3,1.0); body.scale.set(1.4,1.2,1.0);
       this._fpBasePos={x:0.26,y:-0.22,z:-0.36};
+      this._fpAdsPos={x:0.0,y:-0.15,z:-0.30};
     }
     this.fpWeapon.position.set(this._fpBasePos.x,this._fpBasePos.y,this._fpBasePos.z);
+    // Update TP weapon scale
+    if(this.tpWeapon){
+      const tpBarrel=this.tpWeapon.children[0];
+      const tpBody=this.tpWeapon.children[1];
+      if(id==="pistol"){
+        tpBarrel.scale.set(1,1,0.7); tpBody.scale.set(1,1,0.8);
+      }else if(id==="rifle"){
+        tpBarrel.scale.set(1,1,1.4); tpBody.scale.set(1.1,1.1,1.3);
+      }else{
+        tpBarrel.scale.set(1.3,1.3,1.0); tpBody.scale.set(1.4,1.2,1.0);
+      }
+    }
   }
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
@@ -1100,6 +1150,16 @@ class Player{
       this.radiation=Math.max(0,this.radiation-3*dt);
     }
 
+    // ADS (aim-down-sights) — smooth in, instant out
+    const wantAim=env.input?env.input.mouseDown(2):false;
+    if(wantAim && this.reloading<=0 && !this.pipboyActive){
+      this.aiming=true;
+      this.adsAnim=lerp(this.adsAnim,1,12*dt);
+    }else{
+      this.aiming=false;
+      this.adsAnim=0; // instant release
+    }
+
     this.updateCamera(dt,env);
     this.updateModels(dt);
   }
@@ -1109,6 +1169,9 @@ class Player{
     this.model.position.copy(this.pos);
     this.model.position.y-=1.6;
     this.model.rotation.y=this.yaw;
+
+    // Third-person weapon visibility
+    if(this.tpWeapon) this.tpWeapon.visible=(this.camMode==="tp");
 
     // Pip-Boy animation lerp
     const pipTarget=this.pipboyActive?1:0;
@@ -1120,10 +1183,16 @@ class Player{
     this.fpWeapon.visible=showWeapon;
     if(this.camMode==="fp"&&this._fpBasePos){
       const bp=this._fpBasePos;
-      const bobX=Math.sin(this.weaponBob)*0.006;
-      const bobY=Math.cos(this.weaponBob*2)*0.004;
-      this.fpWeapon.position.set(bp.x+bobX,bp.y+bobY,bp.z-this.weaponKick*0.06);
-      this.fpWeapon.rotation.x=-this.weaponKick*0.5;
+      const ap=this._fpAdsPos||bp;
+      const t=this.adsAnim;
+      const bobScale=1-t*0.85; // reduce bob when aiming
+      const bobX=Math.sin(this.weaponBob)*0.006*bobScale;
+      const bobY=Math.cos(this.weaponBob*2)*0.004*bobScale;
+      const px=lerp(bp.x,ap.x,t)+bobX;
+      const py=lerp(bp.y,ap.y,t)+bobY;
+      const pz=lerp(bp.z,ap.z,t)-this.weaponKick*0.06*(1-t*0.5);
+      this.fpWeapon.position.set(px,py,pz);
+      this.fpWeapon.rotation.x=-this.weaponKick*0.5*(1-t*0.6);
     }
 
     // First-person Pip-Boy position (lerps from stowed to raised)
@@ -1148,16 +1217,32 @@ class Player{
       const pipPitch=lerp(0,-0.55,this.pipboyAnim);
       this.camera.rotation.x=this.camPitch+pipPitch;
     }else{
+      // Over-the-shoulder third-person camera with pitch support
       const back=v3(Math.sin(this.camYaw),0,Math.cos(this.camYaw));
       const side=v3(Math.cos(this.camYaw),0,-Math.sin(this.camYaw));
       const cam=this.pos.clone();
-      cam.y+=0.2;
-      cam.addScaledVector(back,5.0);
-      cam.addScaledVector(side,0.9);
-      cam.y+=2.5;
-      cam.y=Math.max(cam.y,1.2);
+      const adsT=this.adsAnim;
+      const dist=lerp(2.5,1.6,adsT);
+      const sideOff=lerp(0.5,0.35,adsT);
+      const heightOff=lerp(0.8,0.5,adsT);
+      cam.addScaledVector(back,dist);
+      cam.addScaledVector(side,sideOff);
+      cam.y+=heightOff;
+      // Apply pitch to camera offset (look up/down moves camera)
+      cam.y-=this.camPitch*dist*0.3;
+      cam.y=Math.max(cam.y,0.5);
       this.camera.position.lerp(cam,1-Math.exp(-10*dt));
-      this.camera.lookAt(this.pos.x,this.pos.y+0.6,this.pos.z);
+      // Look at shoulder height with pitch influence
+      const lookY=this.pos.y+0.3-this.camPitch*0.5;
+      this.camera.lookAt(this.pos.x,lookY,this.pos.z);
+    }
+    // ADS FOV zoom for third-person
+    if(env.fov!==undefined){
+      const baseFov=env.fov;
+      let targetFov=baseFov;
+      if(this.aiming && this.camMode==="tp") targetFov=baseFov*0.85;
+      this.camera.fov=lerp(this.camera.fov,targetFov,10*dt);
+      this.camera.updateProjectionMatrix();
     }
   }
   getModdedMagSize(){
@@ -2270,6 +2355,10 @@ class Game{
     window.addEventListener("mouseup",e=>{
       if(e.button!==0) return;
       this.autoFire=false;
+    });
+    // Prevent context menu when right-clicking (used for ADS)
+    window.addEventListener("contextmenu",e=>{
+      if(this.input.mouse.locked) e.preventDefault();
     });
   }
 

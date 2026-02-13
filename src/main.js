@@ -1005,7 +1005,7 @@ class Player{
       this.reloading-=dt;
       if(this.reloading<=0){
         const id=this.weapon.id;
-        const need=this.weapon.magSize-this.mag[id];
+        const need=this.getModdedMagSize()-this.mag[id];
         const take=Math.min(need,this.reserve[id]);
         this.mag[id]+=take; this.reserve[id]-=take;
       }
@@ -1077,10 +1077,15 @@ class Player{
       this.camera.lookAt(this.pos.x,this.pos.y+0.6,this.pos.z);
     }
   }
+  getModdedMagSize(){
+    const id=this.weapon.id;
+    const mods=this._weaponMods?.[id];
+    return Math.floor(this.weapon.magSize*(mods?.magMul||1));
+  }
   requestReload(env){
     if(this.reloading>0) return;
     const id=this.weapon.id;
-    if(this.mag[id]>=this.weapon.magSize) return;
+    if(this.mag[id]>=this.getModdedMagSize()) return;
     if(this.reserve[id]<=0){ env.audio.click(); return; }
     const baseTime=(id==="shotgun")?1.4:1.1;
     this.reloading=baseTime*(1-this.skills.quickHands*0.10);
@@ -1115,8 +1120,9 @@ class Player{
     env.particles.spawnCasing(casingPos,casingVel);
 
     const pellets=this.weapon.pellets||1;
+    const mods=this._weaponMods?.[id];
     for(let i=0;i<pellets;i++){
-      const spread=this.weapon.spread;
+      const spread=this.weapon.spread*(mods?.spreadMul||1);
       const sx=(Math.random()*2-1)*spread;
       const sy=(Math.random()*2-1)*spread;
       const shot=dir.clone();
@@ -1601,8 +1607,12 @@ class Game{
     }
     else if(def?.type==="mod"){
       this.ui.showToast(`Applied ${def.name} to ${this.player.weapon.name}`);
-      if(it.id==="scope") this.player.weapon.spread*=0.6;
-      else if(it.id==="extmag") this.player.weapon.magSize=Math.floor(this.player.weapon.magSize*1.5);
+      // Store mods on a per-player copy instead of mutating shared WeaponDefs
+      if(!this.player._weaponMods) this.player._weaponMods={};
+      const wid=this.player.weapon.id;
+      if(!this.player._weaponMods[wid]) this.player._weaponMods[wid]={spreadMul:1,magMul:1};
+      if(it.id==="scope") this.player._weaponMods[wid].spreadMul*=0.6;
+      else if(it.id==="extmag") this.player._weaponMods[wid].magMul*=1.5;
     }
     else return;
     it.qty=(it.qty||1)-1;
@@ -1709,8 +1719,8 @@ class Game{
     }
     if(!ud.lootDone){
       ud.lootDone=true;
-      const scavBonus=this.player.skills.scavenger*0.15;
-      const r=Math.random()-scavBonus;
+      const scavBonus=1+this.player.skills.scavenger*0.15;
+      const r=Math.random()/scavBonus;
       if(r<0.30) this.spawnLoot(root.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*3)});
       else if(r<0.50) this.spawnLoot(root.position.clone(),{id:"ration",qty:1});
       else if(r<0.65) this.spawnLoot(root.position.clone(),{id:"stim",qty:1});

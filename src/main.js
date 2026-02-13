@@ -34,7 +34,7 @@ function makeUI(){
     .comp{position:absolute;left:50%;top:18px;transform:translateX(-50%);font-size:12px;opacity:.8;letter-spacing:1px}
     .obj{position:absolute;left:18px;bottom:18px;font-size:12px;opacity:.85;max-width:420px}
     .scrim{position:absolute;inset:0;background:radial-gradient(circle at 50% 45%, rgba(0,0,0,.45), rgba(0,0,0,.9));display:none;pointer-events:auto}
-    .menu{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px, 92vw);border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.78);box-shadow:0 20px 80px rgba(0,0,0,.6);padding:18px}
+    .menu{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px, 92vw);max-height:85vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.78);box-shadow:0 20px 80px rgba(0,0,0,.6);padding:18px}
     .menu h1{margin:0 0 6px 0;font-size:28px;letter-spacing:.4px}
     .menu p{margin:0 0 14px 0;opacity:.85;line-height:1.35}
     .btns{display:flex;gap:10px;flex-wrap:wrap}
@@ -66,7 +66,18 @@ function makeUI(){
     .enemybar{position:absolute;left:50%;top:22%;transform:translateX(-50%);width:320px;height:10px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.35);display:none}
     .enemybar .fill{height:100%;width:50%;background:rgba(255,255,255,.75)}
     .enemyname{position:absolute;left:50%;top:20.5%;transform:translateX(-50%);font-size:12px;opacity:.85;display:none}
+    .rad-bar{position:absolute;left:18px;height:12px;width:220px;border:1px solid rgba(100,255,100,.35);background:rgba(0,0,0,.35)}
+    .rad-bar>.fill{height:100%;width:0%;background:rgba(100,255,50,.75)}
+    .armor-lbl{position:absolute;left:250px;font-size:12px;opacity:.9}
+    .xp-bar{position:absolute;left:18px;height:6px;width:220px;border:1px solid rgba(255,220,100,.3);background:rgba(0,0,0,.25)}
+    .xp-bar>.fill{height:100%;width:0%;background:rgba(255,220,100,.65)}
     .wm{position:absolute;right:18px;top:18px;font-size:11px;opacity:.35}
+    .skill-tree{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(700px,92vw);max-height:80vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.92);display:none;pointer-events:auto;padding:18px}
+    .skill-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+    .skill-name{font-weight:800;font-size:14px}
+    .skill-desc{font-size:11px;opacity:.7}
+    .skill-lvl{font-size:13px;opacity:.9}
+    .craft-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(600px,90vw);max-height:75vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.92);display:none;pointer-events:auto;padding:18px}
   `;
   const hud=el("div","hud",root);
 
@@ -75,6 +86,14 @@ function makeUI(){
 
   const stLbl=el("div","lbl",hud); stLbl.style.top="56px"; stLbl.textContent="STA";
   const st=el("div","bar",hud); st.style.top="72px"; const stFill=el("div","fill",st);
+
+  const radLbl=el("div","lbl",hud); radLbl.style.top="94px"; radLbl.textContent="RAD";
+  const rad=el("div","rad-bar",hud); rad.style.top="110px"; const radFill=el("div","fill",rad);
+
+  const xpLbl=el("div","lbl",hud); xpLbl.style.top="130px"; xpLbl.textContent="XP";
+  const xpBar=el("div","xp-bar",hud); xpBar.style.top="146px"; const xpFill=el("div","fill",xpBar);
+
+  const armorLbl=el("div","armor-lbl",hud); armorLbl.style.top="18px"; armorLbl.textContent="Armor: 0";
 
   const comp=el("div","comp",hud);
   const ammo=el("div","ammo",hud); ammo.innerHTML=`<div class="small">WEAPON</div><div class="big">0 / 0</div>`;
@@ -108,6 +127,9 @@ function makeUI(){
   const cutB=el("div","cb",letter);
   const cutS=el("div","cs",letter);
 
+  const skillTree=el("div","skill-tree",root);
+  const craftPanel=el("div","craft-panel",root);
+
   const wm=el("div","wm",hud); wm.textContent="Wasteland Japan — Vault 811";
 
   function showToast(msg, sec=2.2){
@@ -116,7 +138,7 @@ function makeUI(){
     showToast._t=setTimeout(()=>toast.classList.remove("on"), sec*1000);
   }
 
-  return {root,hud,hpFill,stFill,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname};
+  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel};
 }
 
 // ---------------- Audio (simple synth) ----------------
@@ -240,7 +262,9 @@ function defaultSave(){
       ammo:{pistol:48,rifle:120,shotgun:24},
       mags:{pistol:12,rifle:30,shotgun:6},
       inv:[{id:"stim",qty:1},{id:"ration",qty:1},{id:"scrap",qty:2},{id:"pistol",qty:1},{id:"rifle",qty:1},{id:"shotgun",qty:1}],
-      maxWeight:55
+      maxWeight:55,
+      radiation:0,armor:0,xp:0,level:1,skillPoints:0,
+      skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
     },
     world:{seed:811, quest:{step:0,log:["Leave Vault 811"]}}
   };
@@ -260,10 +284,17 @@ function writeSave(save){ localStorage.setItem(SAVE_KEY, JSON.stringify({...save
 const ItemDB={
   stim:{id:"stim",name:"Field Stim",type:"consumable",weight:0.8,desc:"Restores 35 HP."},
   ration:{id:"ration",name:"Ration Pack",type:"consumable",weight:1.2,desc:"Restores 20 HP."},
+  radaway:{id:"radaway",name:"Rad-Away",type:"consumable",weight:0.6,desc:"Removes 30 radiation."},
   scrap:{id:"scrap",name:"Scrap Metal",type:"junk",weight:2.0,desc:"Old world leftovers."},
+  cloth:{id:"cloth",name:"Tattered Cloth",type:"junk",weight:0.5,desc:"Useful for crafting."},
+  circuits:{id:"circuits",name:"Circuit Board",type:"junk",weight:0.8,desc:"Pre-war electronics."},
   pistol:{id:"pistol",name:"Type-11 Pistol",type:"weapon",weight:2.4,desc:"Reliable. Loud."},
   rifle:{id:"rifle",name:"Kurokawa Rifle",type:"weapon",weight:4.9,desc:"Automatic. Hungry."},
   shotgun:{id:"shotgun",name:"Shrine-Breaker",type:"weapon",weight:5.6,desc:"Close-range sermon."},
+  vest:{id:"vest",name:"Makeshift Vest",type:"armor",weight:3.5,desc:"+10 Armor."},
+  plating:{id:"plating",name:"Scrap Plating",type:"armor",weight:5.0,desc:"+20 Armor."},
+  scope:{id:"scope",name:"Improvised Scope",type:"mod",weight:0.4,desc:"Reduces spread."},
+  extmag:{id:"extmag",name:"Extended Magazine",type:"mod",weight:0.6,desc:"+50% mag size."},
 };
 function invWeight(inv){
   let w=0; for(const it of inv){ const d=ItemDB[it.id]; if(d) w+=d.weight*(it.qty||1); }
@@ -275,6 +306,25 @@ const WeaponDefs=[
   {id:"shotgun",name:"Shrine-Breaker",fireMode:"semi",rpm:120,magSize:6,pellets:8,spread:0.018,damage:10,range:55,recoil:{kick:0.06,ret:7.0}},
 ];
 
+// Crafting recipes
+const CraftRecipes=[
+  {id:"stim",name:"Field Stim",needs:[{id:"scrap",qty:1},{id:"cloth",qty:1}],result:{id:"stim",qty:1}},
+  {id:"radaway",name:"Rad-Away",needs:[{id:"scrap",qty:1},{id:"circuits",qty:1}],result:{id:"radaway",qty:1}},
+  {id:"vest",name:"Makeshift Vest",needs:[{id:"scrap",qty:3},{id:"cloth",qty:2}],result:{id:"vest",qty:1}},
+  {id:"plating",name:"Scrap Plating",needs:[{id:"scrap",qty:5}],result:{id:"plating",qty:1}},
+  {id:"scope",name:"Improvised Scope",needs:[{id:"scrap",qty:2},{id:"circuits",qty:1}],result:{id:"scope",qty:1}},
+  {id:"extmag",name:"Extended Magazine",needs:[{id:"scrap",qty:3}],result:{id:"extmag",qty:1}},
+];
+
+// Skill definitions
+const SkillDefs={
+  toughness:{name:"Toughness",desc:"+15 HP per level",maxLvl:5},
+  quickHands:{name:"Quick Hands",desc:"-10% reload time per level",maxLvl:5},
+  scavenger:{name:"Scavenger",desc:"+15% loot find per level",maxLvl:5},
+  ironSights:{name:"Iron Sights",desc:"+8% weapon damage per level",maxLvl:5},
+  mutantHide:{name:"Mutant Hide",desc:"+5 Armor per level",maxLvl:5},
+};
+
 // ---------------- Particles ----------------
 class Particles{
   constructor(scene){
@@ -282,13 +332,38 @@ class Particles{
     this.parts=[];
     this.geom=new THREE.SphereGeometry(0.05,6,6);
     this.mat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true});
+    this.casingGeom=new THREE.CylinderGeometry(0.015,0.015,0.05,6);
+    this.casingMat=new THREE.MeshStandardMaterial({color:0xd4a843,metalness:0.6,roughness:0.3});
+    this.decals=[];
+    this.decalGeom=new THREE.PlaneGeometry(0.3,0.3);
+    this.decalMat=new THREE.MeshBasicMaterial({color:0x111111,transparent:true,opacity:0.7,depthWrite:false});
   }
   spawn(pos,vel,life=0.35,size=0.05){
     const m=new THREE.Mesh(this.geom,this.mat.clone());
     m.scale.setScalar(size);
     m.position.copy(pos);
     this.scene.add(m);
-    this.parts.push({m,vel:vel.clone(),life,max:life});
+    this.parts.push({m,vel:vel.clone(),life,max:life,type:"spark"});
+  }
+  spawnCasing(pos,vel){
+    const m=new THREE.Mesh(this.casingGeom,this.casingMat);
+    m.position.copy(pos);
+    m.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+    this.scene.add(m);
+    this.parts.push({m,vel:vel.clone(),life:1.2,max:1.2,type:"casing",spin:v3(rand(-8,8),rand(-8,8),rand(-8,8))});
+  }
+  spawnDecal(pos,normal){
+    const m=new THREE.Mesh(this.decalGeom,this.decalMat.clone());
+    m.position.copy(pos).addScaledVector(normal,0.02);
+    m.lookAt(pos.clone().add(normal));
+    m.scale.setScalar(0.3+Math.random()*0.3);
+    this.scene.add(m);
+    this.decals.push({m,life:8.0});
+    if(this.decals.length>50){
+      const old=this.decals.shift();
+      this.scene.remove(old.m);
+      old.m.material.dispose();
+    }
   }
   update(dt){
     for(let i=this.parts.length-1;i>=0;i--){
@@ -296,11 +371,28 @@ class Particles{
       p.life-=dt;
       p.m.position.addScaledVector(p.vel,dt);
       p.vel.y-=5.5*dt;
-      p.m.material.opacity=clamp(p.life/p.max,0,1);
+      if(p.type==="casing" && p.spin){
+        p.m.rotation.x+=p.spin.x*dt;
+        p.m.rotation.y+=p.spin.y*dt;
+        p.m.rotation.z+=p.spin.z*dt;
+        if(p.m.position.y<0.03){p.m.position.y=0.03; p.vel.multiplyScalar(0.3); p.vel.y=Math.abs(p.vel.y)*0.2;}
+      }
+      if(p.type==="spark") p.m.material.opacity=clamp(p.life/p.max,0,1);
       if(p.life<=0){
         this.scene.remove(p.m);
-        p.m.material.dispose();
+        if(p.m.material.dispose) p.m.material.dispose();
         this.parts.splice(i,1);
+      }
+    }
+    for(let i=this.decals.length-1;i>=0;i--){
+      this.decals[i].life-=dt;
+      if(this.decals[i].life<=0){
+        const d=this.decals[i];
+        this.scene.remove(d.m);
+        d.m.material.dispose();
+        this.decals.splice(i,1);
+      }else if(this.decals[i].life<2.0){
+        this.decals[i].m.material.opacity=this.decals[i].life/2.0;
       }
     }
   }
@@ -327,6 +419,8 @@ class World{
     this.grassMat=new THREE.MeshStandardMaterial({color:0x2a4a36,roughness:1});
     this.rockGeom=new THREE.DodecahedronGeometry(0.6,0);
     this.rockMat=new THREE.MeshStandardMaterial({color:0x2a2e35,roughness:1});
+    this.matRail=new THREE.MeshStandardMaterial({color:0x4a3a2a,roughness:0.8,metalness:0.3});
+    this.matShrine=new THREE.MeshStandardMaterial({color:0x3d1a1a,roughness:0.85});
   }
   key(tx,tz){return `${tx},${tz}`;}
   biome(tx,tz){
@@ -335,6 +429,12 @@ class World{
     if(tx<-1) return 2; // coast/industrial west
     if(tz>1) return 1; // forest north
     return (tx+tz)%2===0?0:1;
+  }
+  fogForBiome(biome){
+    if(biome===0) return {near:20,far:240,color:new THREE.Color(0x0a1018)};
+    if(biome===1) return {near:12,far:180,color:new THREE.Color(0x0a1510)};
+    if(biome===2) return {near:10,far:160,color:new THREE.Color(0x101418)};
+    return {near:18,far:220,color:new THREE.Color(0x0c1018)};
   }
   update(pos){
     const tx=Math.floor(pos.x/this.tileSize);
@@ -406,9 +506,47 @@ class World{
     instRocks.castShadow=true; instRocks.receiveShadow=true;
     g.add(instRocks);
 
+    // City buildings with height variation (biome 0)
+    if(biome===0){
+      const numBuildings=2+Math.floor(rng()*3);
+      for(let i=0;i<numBuildings;i++){
+        const bw=4+rng()*6;
+        const bh=3+rng()*12;
+        const bd=4+rng()*6;
+        const bx=(rng()-0.5)*this.tileSize*0.65;
+        const bz=(rng()-0.5)*this.tileSize*0.65;
+        if(Math.abs(bx)<this.tileSize*0.2) continue;
+        const building=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,bd),this.matConcrete);
+        building.position.set(bx,bh/2,bz);
+        building.castShadow=true; building.receiveShadow=true;
+        g.add(building);
+        // Window glow strips
+        if(rng()<0.4){
+          const stripe=new THREE.Mesh(new THREE.BoxGeometry(bw*0.8,0.3,0.1),this.matNeon);
+          stripe.position.set(bx,bh*0.6,bz+bd/2+0.05);
+          g.add(stripe);
+        }
+      }
+    }
+
+    // Destroyed train tracks (biome 2 or random)
+    if(biome===2 || (biome===0 && rng()<0.25)){
+      g.add(this.makeTrainTracks(rng));
+    }
+
     // POI
     if(rng()<0.35){
-      const poi=(biome===1)?this.makeTorii(rng):(biome===0)?this.makeStation(rng):this.makeIndustrial(rng);
+      let poi;
+      if(biome===1){
+        const variant=rng();
+        if(variant<0.33) poi=this.makeTorii(rng);
+        else if(variant<0.66) poi=this.makeShrine(rng);
+        else poi=this.makeStoneLantern(rng);
+      }else if(biome===0){
+        poi=this.makeStation(rng);
+      }else{
+        poi=this.makeIndustrial(rng);
+      }
       g.add(poi);
     }
 
@@ -492,6 +630,89 @@ class World{
     g.add(box);
     g.position.set((rng()-0.5)*18,0,(rng()-0.5)*18);
     g.rotation.y=rng()*Math.PI*2;
+    return g;
+  }
+  makeTrainTracks(rng){
+    const g=new THREE.Group(); g.userData.poi="Destroyed Railway";
+    const trackLen=this.tileSize*0.8;
+    // Rails
+    for(let side=-1;side<=1;side+=2){
+      const rail=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.1,trackLen),this.matRail);
+      rail.position.set(side*0.6,0.15,0);
+      rail.castShadow=true;
+      g.add(rail);
+    }
+    // Ties (wooden sleepers)
+    const numTies=Math.floor(trackLen/1.5);
+    for(let i=0;i<numTies;i++){
+      const tie=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.1,0.2),this.matWood);
+      tie.position.set(0,0.06,-trackLen/2+i*1.5+(rng()-0.5)*0.3);
+      tie.rotation.y=(rng()-0.5)*0.08;
+      if(rng()<0.15) tie.position.y=-0.5;
+      g.add(tie);
+    }
+    // Derailed cart
+    if(rng()<0.6){
+      const cart=new THREE.Mesh(new THREE.BoxGeometry(3,2,6),this.matRust);
+      cart.position.set(2+rng()*2,1.2,(rng()-0.5)*trackLen*0.4);
+      cart.rotation.z=(rng()-0.5)*0.4;
+      cart.rotation.y=(rng()-0.5)*0.3;
+      cart.castShadow=true;
+      g.add(cart);
+    }
+    g.position.set((rng()-0.5)*10,0,0);
+    g.rotation.y=rng()<0.5?0:Math.PI/2;
+    return g;
+  }
+  makeShrine(rng){
+    const g=new THREE.Group(); g.userData.poi="Abandoned Shrine";
+    // Platform
+    const platform=new THREE.Mesh(new THREE.BoxGeometry(6,0.4,5),this.matConcrete);
+    platform.position.y=0.2; platform.receiveShadow=true;
+    g.add(platform);
+    // Walls
+    const wallBack=new THREE.Mesh(new THREE.BoxGeometry(5.5,3.2,0.3),this.matShrine);
+    wallBack.position.set(0,1.8,-2.2); wallBack.castShadow=true;
+    g.add(wallBack);
+    // Roof
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(7,0.3,6),this.matShrine);
+    roof.position.set(0,3.6,0); roof.rotation.z=(rng()-0.5)*0.1; roof.castShadow=true;
+    g.add(roof);
+    // Offering table
+    const table=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.7,0.8),this.matWood);
+    table.position.set(0,0.75,-1.5); table.castShadow=true;
+    g.add(table);
+    // Bell
+    const bell=new THREE.Mesh(new THREE.SphereGeometry(0.2,10,10),this.matRust);
+    bell.position.set(0,3.1,1.5); g.add(bell);
+    const rope=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1.2,6),this.matWood);
+    rope.position.set(0,2.4,1.5); g.add(rope);
+    g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
+    g.rotation.y=rng()*Math.PI*2;
+    g.traverse(o=>{if(o.isMesh) o.castShadow=true;});
+    return g;
+  }
+  makeStoneLantern(rng){
+    const g=new THREE.Group(); g.userData.poi="Stone Lantern Path";
+    const mat=new THREE.MeshStandardMaterial({color:0x4a4a4a,roughness:0.95});
+    const glowMat=new THREE.MeshStandardMaterial({color:0xffaa44,emissive:0xffaa44,emissiveIntensity:0.4,roughness:0.6});
+    for(let i=0;i<4;i++){
+      const side=i%2===0?-1:1;
+      const z=-6+Math.floor(i/2)*12;
+      const lantern=new THREE.Group();
+      const base=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.3,0.6),mat); base.position.y=0.15;
+      const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.15,1.5,8),mat); post.position.y=1.0;
+      const lamp=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.4,0.5),mat); lamp.position.y=1.95;
+      const glow=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.25,0.35),glowMat); glow.position.y=1.95;
+      const cap=new THREE.Mesh(new THREE.ConeGeometry(0.4,0.35,4),mat); cap.position.y=2.35; cap.rotation.y=Math.PI/4;
+      lantern.add(base,post,lamp,glow,cap);
+      lantern.position.set(side*3,0,z);
+      if(rng()<0.2) lantern.rotation.z=(rng()-0.5)*0.4;
+      g.add(lantern);
+    }
+    g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
+    g.rotation.y=rng()*Math.PI*2;
+    g.traverse(o=>{if(o.isMesh) o.castShadow=true;});
     return g;
   }
   makeEnemy(kind){
@@ -608,12 +829,109 @@ class Player{
     this.maxWeight=55;
     this.inVault=true;
     this.stepT=0;
+
+    // Deep systems
+    this.radiation=0; this.radiationMax=100;
+    this.armor=0;
+    this.xp=0; this.level=1; this.skillPoints=0;
+    this.skills={toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0};
+
+    // Third-person model
+    this.model=this._buildModel();
+    this.model.visible=false;
+
+    // First-person weapon view model
+    this.fpWeapon=this._buildFPWeapon();
+    this.camera.add(this.fpWeapon);
+
+    // Muzzle flash
+    this.muzzleFlash=this._buildMuzzleFlash();
+    this.fpWeapon.add(this.muzzleFlash);
+    this.muzzleFlashTimer=0;
+
+    // Weapon bob/recoil animation state
+    this.weaponBob=0;
+    this.weaponKick=0;
+    this.weaponKickReturn=0;
+  }
+  _buildModel(){
+    const g=new THREE.Group();
+    const bodyMat=new THREE.MeshStandardMaterial({color:0x3a4a5a,roughness:0.85});
+    const skinMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
+    const torso=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.75,0.35),bodyMat);
+    torso.position.y=1.2; torso.castShadow=true;
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.2,12,12),skinMat);
+    head.position.y=1.75; head.castShadow=true;
+    const legL=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.7,0.25),bodyMat);
+    legL.position.set(-0.15,0.45,0); legL.castShadow=true;
+    const legR=legL.clone(); legR.position.x=0.15;
+    const armL=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.6,0.22),bodyMat);
+    armL.position.set(-0.42,1.15,0); armL.castShadow=true;
+    const armR=armL.clone(); armR.position.x=0.42;
+    g.add(torso,head,legL,legR,armL,armR);
+    return g;
+  }
+  _buildFPWeapon(){
+    const g=new THREE.Group();
+    const metalMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4});
+    const gripMat=new THREE.MeshStandardMaterial({color:0x3a2e22,roughness:0.9});
+    // barrel
+    const barrel=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.04,0.5),metalMat);
+    barrel.position.set(0,0,0.2); barrel.castShadow=true;
+    // body
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.28),metalMat);
+    body.position.set(0,-0.01,0); body.castShadow=true;
+    // grip
+    const grip=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.12,0.06),gripMat);
+    grip.position.set(0,-0.09,-0.04); grip.rotation.x=0.25; grip.castShadow=true;
+    // hand
+    const handMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
+    const hand=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.06,0.1),handMat);
+    hand.position.set(0,-0.06,0.02);
+    g.add(barrel,body,grip,hand);
+    g.position.set(0.28,-0.24,-0.4);
+    g.rotation.y=0;
+    return g;
+  }
+  _buildMuzzleFlash(){
+    const g=new THREE.Group();
+    const flashMat=new THREE.MeshBasicMaterial({color:0xffdd44,transparent:true,opacity:0.9});
+    const flash=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),flashMat);
+    flash.position.set(0,0,0.48);
+    const flareMat=new THREE.MeshBasicMaterial({color:0xff8800,transparent:true,opacity:0.7});
+    const flare=new THREE.Mesh(new THREE.PlaneGeometry(0.14,0.14),flareMat);
+    flare.position.set(0,0,0.5);
+    const flare2=flare.clone(); flare2.rotation.z=Math.PI/4;
+    g.add(flash,flare,flare2);
+    g.visible=false;
+    return g;
   }
   weight(){return invWeight(this.inv);}
-  setWeapon(i){this.equipped=clamp(i,0,WeaponDefs.length-1); this.weapon=WeaponDefs[this.equipped];}
+  setWeapon(i){
+    this.equipped=clamp(i,0,WeaponDefs.length-1);
+    this.weapon=WeaponDefs[this.equipped];
+    this._updateFPWeapon();
+  }
+  _updateFPWeapon(){
+    if(!this.fpWeapon) return;
+    const id=this.weapon.id;
+    const barrel=this.fpWeapon.children[0];
+    const body=this.fpWeapon.children[1];
+    if(id==="pistol"){
+      barrel.scale.set(1,1,0.7); body.scale.set(1,1,0.8);
+      this.fpWeapon.position.set(0.28,-0.24,-0.4);
+    }else if(id==="rifle"){
+      barrel.scale.set(1,1,1.4); body.scale.set(1.1,1.1,1.3);
+      this.fpWeapon.position.set(0.25,-0.22,-0.38);
+    }else{
+      barrel.scale.set(1.3,1.3,1.0); body.scale.set(1.4,1.2,1.0);
+      this.fpWeapon.position.set(0.26,-0.22,-0.36);
+    }
+  }
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
-      equipped:this.equipped,ammo:{...this.reserve},mags:{...this.mag},inv:JSON.parse(JSON.stringify(this.inv)),maxWeight:this.maxWeight};
+      equipped:this.equipped,ammo:{...this.reserve},mags:{...this.mag},inv:JSON.parse(JSON.stringify(this.inv)),maxWeight:this.maxWeight,
+      radiation:this.radiation,armor:this.armor,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
   }
   fromSave(s){
     this.pos.set(s.pos.x,s.pos.y,s.pos.z);
@@ -624,6 +942,12 @@ class Player{
     this.reserve={...s.ammo}; this.mag={...s.mags};
     this.inv=Array.isArray(s.inv)?s.inv:[];
     this.maxWeight=s.maxWeight||55;
+    this.radiation=s.radiation||0;
+    this.armor=s.armor||0;
+    this.xp=s.xp||0;
+    this.level=s.level||1;
+    this.skillPoints=s.skillPoints||0;
+    if(s.skills) this.skills={...this.skills,...s.skills};
   }
   update(dt,input,env){
     const {dx,dy}=input.consumeMouse();
@@ -634,7 +958,7 @@ class Player{
     const targetC=(input.down("ControlLeft")||input.down("ControlRight"))?1:0;
     this.crouch=lerp(this.crouch,targetC,10*dt);
 
-    const f=v3(Math.sin(this.yaw),0,Math.cos(this.yaw));
+    const f=v3(-Math.sin(this.yaw),0,-Math.cos(this.yaw));
     const r=v3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
     let move=v3();
     if(input.down("KeyW")) move.add(f);
@@ -681,7 +1005,7 @@ class Player{
       this.reloading-=dt;
       if(this.reloading<=0){
         const id=this.weapon.id;
-        const need=this.weapon.magSize-this.mag[id];
+        const need=this.getModdedMagSize()-this.mag[id];
         const take=Math.min(need,this.reserve[id]);
         this.mag[id]+=take; this.reserve[id]-=take;
       }
@@ -690,7 +1014,47 @@ class Player{
     this.fireCd=Math.max(0,this.fireCd-dt);
     this.recoilKick=lerp(this.recoilKick,0,this.weapon.recoil.ret*dt);
 
+    // Weapon animation
+    this.weaponKick=lerp(this.weaponKick,0,12*dt);
+    if(planar>0.5 && this.onGround){
+      this.weaponBob+=dt*(sprint?8.5:5.5);
+    }
+
+    // Muzzle flash timer
+    if(this.muzzleFlashTimer>0){
+      this.muzzleFlashTimer-=dt;
+      if(this.muzzleFlashTimer<=0) this.muzzleFlash.visible=false;
+    }
+
+    // Radiation outside vault
+    if(!this.inVault){
+      this.radiation=Math.min(this.radiationMax,this.radiation+1.2*dt);
+      if(this.radiation>60) this.hp=Math.max(0,this.hp-4*dt);
+    }else{
+      this.radiation=Math.max(0,this.radiation-3*dt);
+    }
+
     this.updateCamera(dt,env);
+    this.updateModels(dt);
+  }
+  updateModels(dt){
+    // Third-person model visibility & position
+    this.model.visible=(this.camMode==="tp");
+    this.model.position.copy(this.pos);
+    this.model.position.y-=1.6;
+    this.model.rotation.y=this.yaw;
+
+    // First-person weapon visibility & animation
+    this.fpWeapon.visible=(this.camMode==="fp");
+    if(this.camMode==="fp"){
+      const basePos=this.fpWeapon.position.clone();
+      const bobX=Math.sin(this.weaponBob)*0.006;
+      const bobY=Math.cos(this.weaponBob*2)*0.004;
+      this.fpWeapon.position.y+=bobY;
+      this.fpWeapon.position.x+=bobX;
+      this.fpWeapon.rotation.x=-this.weaponKick*0.5;
+      this.fpWeapon.position.z+=-this.weaponKick*0.06;
+    }
   }
   updateCamera(dt,env){
     this.camYaw=lerp(this.camYaw,this.yaw,16*dt);
@@ -701,7 +1065,7 @@ class Player{
       this.camera.rotation.y=this.camYaw;
       this.camera.rotation.x=this.camPitch;
     }else{
-      const back=v3(Math.sin(this.camYaw),0,Math.cos(this.camYaw)).multiplyScalar(-1);
+      const back=v3(Math.sin(this.camYaw),0,Math.cos(this.camYaw));
       const side=v3(Math.cos(this.camYaw),0,-Math.sin(this.camYaw));
       const cam=this.pos.clone();
       cam.y+=0.2;
@@ -713,12 +1077,18 @@ class Player{
       this.camera.lookAt(this.pos.x,this.pos.y+0.6,this.pos.z);
     }
   }
+  getModdedMagSize(){
+    const id=this.weapon.id;
+    const mods=this._weaponMods?.[id];
+    return Math.floor(this.weapon.magSize*(mods?.magMul||1));
+  }
   requestReload(env){
     if(this.reloading>0) return;
     const id=this.weapon.id;
-    if(this.mag[id]>=this.weapon.magSize) return;
+    if(this.mag[id]>=this.getModdedMagSize()) return;
     if(this.reserve[id]<=0){ env.audio.click(); return; }
-    this.reloading=(id==="shotgun")?1.4:1.1;
+    const baseTime=(id==="shotgun")?1.4:1.1;
+    this.reloading=baseTime*(1-this.skills.quickHands*0.10);
     env.audio.reload();
   }
   tryFire(env){
@@ -728,16 +1098,31 @@ class Player{
     this.mag[id]-=1;
     this.fireCd=60/this.weapon.rpm;
     this.recoilKick+=this.weapon.recoil.kick;
+    this.weaponKick=id==="shotgun"?0.8:id==="rifle"?0.3:0.45;
     env.audio.gun(id);
     env.shakeKick(id==="shotgun"?0.18:0.09);
+
+    // Muzzle flash
+    this.muzzleFlash.visible=true;
+    this.muzzleFlashTimer=0.05;
+    this.muzzleFlash.rotation.z=Math.random()*Math.PI*2;
+    const flashScale=id==="shotgun"?2.0:id==="rifle"?1.2:1.0;
+    this.muzzleFlash.scale.setScalar(flashScale);
 
     const dir=env.getForward();
     const muzzle=this.pos.clone().addScaledVector(dir,0.7);
     env.particles.spawn(muzzle,dir.clone().multiplyScalar(8),0.08,0.06);
 
+    // Shell casing ejection
+    const right=v3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
+    const casingPos=this.pos.clone().addScaledVector(right,0.3).add(v3(0,-0.1,0));
+    const casingVel=right.clone().multiplyScalar(3+Math.random()*2).add(v3(0,2+Math.random(),0));
+    env.particles.spawnCasing(casingPos,casingVel);
+
     const pellets=this.weapon.pellets||1;
+    const mods=this._weaponMods?.[id];
     for(let i=0;i<pellets;i++){
-      const spread=this.weapon.spread;
+      const spread=this.weapon.spread*(mods?.spreadMul||1);
       const sx=(Math.random()*2-1)*spread;
       const sy=(Math.random()*2-1)*spread;
       const shot=dir.clone();
@@ -762,7 +1147,7 @@ class Game{
     document.body.appendChild(this.renderer.domElement);
 
     this.scene=new THREE.Scene();
-    this.scene.fog=new THREE.Fog(0x04060a,18,260);
+    this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
     this.camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.05,700);
 
@@ -774,6 +1159,7 @@ class Game{
     this.save=loadSave();
     this.player=new Player(this.camera);
     this.player.fromSave(this.save.player);
+    this.scene.add(this.player.model);
 
     this.vault=new Vault(this.scene);
     this.world=new World(this.scene,this.save.world.seed);
@@ -815,15 +1201,19 @@ class Game{
   }
 
   _makeLights(){
-    this.scene.add(new THREE.AmbientLight(0xffffff,0.25));
-    this.sun=new THREE.DirectionalLight(0xffffff,1.1);
+    this.scene.add(new THREE.AmbientLight(0xffffff,0.55));
+    this.sun=new THREE.DirectionalLight(0xfff4e0,1.6);
     this.sun.position.set(50,70,20);
     this.sun.castShadow=true;
     this.sun.shadow.mapSize.set(1024,1024);
     Object.assign(this.sun.shadow.camera,{near:1,far:200,left:-80,right:80,top:80,bottom:-80});
     this.scene.add(this.sun);
 
-    this.vaultLight=new THREE.PointLight(0x9bd3ff,1.6,60,1.9);
+    // Hemisphere light for better ambient variation
+    this.hemiLight=new THREE.HemisphereLight(0x8899bb,0x223311,0.35);
+    this.scene.add(this.hemiLight);
+
+    this.vaultLight=new THREE.PointLight(0x9bd3ff,2.2,60,1.9);
     this.vaultLight.position.set(0,6.5,0);
     this.scene.add(this.vaultLight);
   }
@@ -933,7 +1323,7 @@ class Game{
 
     const kb=document.createElement("div");
     kb.style.marginTop="8px"; kb.style.opacity="0.85";
-    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • I Inventory • Esc Pause</div>`;
+    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • I Inventory • K Skills • J Craft • Esc Pause</div>`;
     wrap.appendChild(kb);
 
     this.ui.btns.innerHTML="";
@@ -971,9 +1361,16 @@ class Game{
   async startNewGame(){
     await this.ensureAudio();
     this.save=defaultSave();
+    // Remove old player model if present
+    if(this.player?.model?.parent) this.player.model.parent.remove(this.player.model);
     this.player=new Player(this.camera);
+    this.scene.add(this.player.model);
     this.quest=this.save.world.quest;
     this.vault.setVisible(true);
+    // Reset vault door
+    this.vault.door.rotation.y=0;
+    this.vault.door.position.x=0;
+    this._doorAnim=null;
     this.audio.startAmbient("vault");
     this.startIntro();
     this.ui.showToast("Hold Enter to skip intro.");
@@ -1038,6 +1435,8 @@ class Game{
       this.mode="inventory";
       this.ui.inv.style.display="block";
       this.ui.scrim.style.display="none";
+      this.ui.skillTree.style.display="none";
+      this.ui.craftPanel.style.display="none";
       this.renderInventory();
     }else{
       this.ui.inv.style.display="none";
@@ -1045,10 +1444,106 @@ class Game{
     }
   }
 
+  toggleSkillTree(){
+    if(this.mode==="skills"){
+      this.ui.skillTree.style.display="none";
+      this.resume();
+      return;
+    }
+    this.mode="skills";
+    this.ui.inv.style.display="none";
+    this.ui.craftPanel.style.display="none";
+    this.ui.skillTree.style.display="block";
+    this.renderSkillTree();
+  }
+
+  renderSkillTree(){
+    const p=this.player;
+    let html=`<div style="font-weight:950;font-size:18px;margin-bottom:4px">Skill Tree</div>`;
+    html+=`<div class="k" style="margin-bottom:12px">Level ${p.level} • Skill Points: ${p.skillPoints}</div>`;
+    for(const [key,def] of Object.entries(SkillDefs)){
+      const lvl=p.skills[key]||0;
+      const canUpgrade=p.skillPoints>0 && lvl<def.maxLvl;
+      html+=`<div class="skill-row">
+        <div><div class="skill-name">${def.name}</div><div class="skill-desc">${def.desc}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="skill-lvl">${lvl}/${def.maxLvl}</span>
+          ${canUpgrade?`<div class="chip" data-skill="${key}">+</div>`:`<span class="k">MAX</span>`}
+        </div>
+      </div>`;
+    }
+    this.ui.skillTree.innerHTML=html;
+    this.ui.skillTree.querySelectorAll("[data-skill]").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const sk=btn.dataset.skill;
+        if(p.skillPoints>0 && p.skills[sk]<SkillDefs[sk].maxLvl){
+          p.skills[sk]++;
+          p.skillPoints--;
+          if(sk==="toughness") p.hpMax=100+p.skills.toughness*15;
+          this.ui.showToast(`${SkillDefs[sk].name} upgraded to ${p.skills[sk]}`);
+          this.renderSkillTree();
+        }
+      });
+    });
+  }
+
+  toggleCrafting(){
+    if(this.mode==="crafting"){
+      this.ui.craftPanel.style.display="none";
+      this.resume();
+      return;
+    }
+    this.mode="crafting";
+    this.ui.inv.style.display="none";
+    this.ui.skillTree.style.display="none";
+    this.ui.craftPanel.style.display="block";
+    this.renderCrafting();
+  }
+
+  renderCrafting(){
+    const p=this.player;
+    let html=`<div style="font-weight:950;font-size:18px;margin-bottom:12px">Crafting</div>`;
+    for(const recipe of CraftRecipes){
+      const canCraft=recipe.needs.every(n=>{
+        const have=p.inv.find(x=>x.id===n.id);
+        return have && (have.qty||1)>=n.qty;
+      });
+      const needsStr=recipe.needs.map(n=>`${ItemDB[n.id]?.name||n.id} x${n.qty}`).join(", ");
+      const resultDef=ItemDB[recipe.result.id];
+      html+=`<div class="skill-row">
+        <div><div class="skill-name">${resultDef?.name||recipe.name}</div><div class="skill-desc">Needs: ${needsStr}</div></div>
+        <div>${canCraft?`<div class="chip" data-craft="${recipe.id}">Craft</div>`:`<span class="k" style="opacity:.4">Missing</span>`}</div>
+      </div>`;
+    }
+    this.ui.craftPanel.innerHTML=html;
+    this.ui.craftPanel.querySelectorAll("[data-craft]").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const recipe=CraftRecipes.find(r=>r.id===btn.dataset.craft);
+        if(!recipe) return;
+        const canCraft=recipe.needs.every(n=>{
+          const have=p.inv.find(x=>x.id===n.id);
+          return have && (have.qty||1)>=n.qty;
+        });
+        if(!canCraft){this.ui.showToast("Missing materials."); return;}
+        for(const n of recipe.needs){
+          const have=p.inv.find(x=>x.id===n.id);
+          have.qty=(have.qty||1)-n.qty;
+          if(have.qty<=0) p.inv.splice(p.inv.indexOf(have),1);
+        }
+        const existing=p.inv.find(x=>x.id===recipe.result.id);
+        if(existing) existing.qty=(existing.qty||1)+recipe.result.qty;
+        else p.inv.push({...recipe.result});
+        this.audio.hit();
+        this.ui.showToast(`Crafted: ${ItemDB[recipe.result.id]?.name||recipe.result.id}`);
+        this.renderCrafting();
+      });
+    });
+  }
+
   renderInventory(){
     const w=this.player.weight();
     this.ui.invTitle.textContent="Inventory";
-    this.ui.invSub.textContent=`Weight: ${w.toFixed(1)} / ${this.player.maxWeight}  •  Equipped: ${this.player.weapon.name}`;
+    this.ui.invSub.textContent=`Weight: ${w.toFixed(1)} / ${this.player.maxWeight}  •  Equipped: ${this.player.weapon.name}  •  Armor: ${this.player.armor}`;
     this.ui.invList.innerHTML="";
     const inv=this.player.inv;
 
@@ -1063,9 +1558,10 @@ class Game{
       actions.className="actions";
       const use=document.createElement("div");
       use.className="chip";
-      use.textContent=def.type==="consumable"?"Use":def.type==="weapon"?"Equip":"Inspect";
+      const useLabel=def.type==="consumable"?"Use":def.type==="weapon"?"Equip":def.type==="armor"?"Wear":def.type==="mod"?"Apply":"Inspect";
+      use.textContent=useLabel;
       use.addEventListener("click",()=>{
-        if(def.type==="consumable") this.useItem(idx);
+        if(def.type==="consumable"||def.type==="armor"||def.type==="mod") this.useItem(idx);
         else if(def.type==="weapon"){
           const slot=WeaponDefs.findIndex(w=>w.id===def.id);
           if(slot>=0){ this.player.setWeapon(slot); this.ui.showToast(`Equipped: ${this.player.weapon.name}`); this.renderInventory(); }
@@ -1083,22 +1579,42 @@ class Game{
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Status</div>
       <div class="k">HP: ${Math.round(this.player.hp)} / ${this.player.hpMax}</div>
       <div class="k">Stamina: ${Math.round(this.player.stamina)} / ${this.player.staminaMax}</div>
+      <div class="k">Radiation: ${Math.round(this.player.radiation)} / ${this.player.radiationMax}</div>
+      <div class="k">Armor: ${this.player.armor}</div>
+      <div class="k">Level: ${this.player.level} (XP: ${this.player.xp}/${this.player.level*100})</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Ammo</div>
       <div class="k">Pistol: ${this.player.mag.pistol}/${this.player.reserve.pistol}</div>
       <div class="k">Rifle: ${this.player.mag.rifle}/${this.player.reserve.rifle}</div>
       <div class="k">Shotgun: ${this.player.mag.shotgun}/${this.player.reserve.shotgun}</div>
       <div style="height:10px"></div>
-      <div style="font-weight:950;font-size:14px;margin-bottom:8px">Tips</div>
-      <div class="k">• Press C to toggle 1st/3rd person</div>
-      <div class="k">• R reload • E interact • Esc pause</div>
+      <div style="font-weight:950;font-size:14px;margin-bottom:8px">Controls</div>
+      <div class="k">• C: camera • R: reload • E: interact</div>
+      <div class="k">• K: skills • J: craft • Esc: pause</div>
     `;
   }
 
   useItem(idx){
     const it=this.player.inv[idx]; if(!it) return;
+    const def=ItemDB[it.id];
     if(it.id==="stim"){ this.player.hp=clamp(this.player.hp+35,0,this.player.hpMax); this.ui.showToast("Used Field Stim (+35 HP)"); }
     else if(it.id==="ration"){ this.player.hp=clamp(this.player.hp+20,0,this.player.hpMax); this.ui.showToast("Ate Ration Pack (+20 HP)"); }
+    else if(it.id==="radaway"){ this.player.radiation=Math.max(0,this.player.radiation-30); this.ui.showToast("Used Rad-Away (-30 RAD)"); }
+    else if(def?.type==="armor"){
+      const bonus=it.id==="vest"?10:it.id==="plating"?20:5;
+      this.player.armor+=bonus;
+      this.ui.showToast(`Equipped ${def.name} (+${bonus} Armor)`);
+    }
+    else if(def?.type==="mod"){
+      this.ui.showToast(`Applied ${def.name} to ${this.player.weapon.name}`);
+      // Store mods on a per-player copy instead of mutating shared WeaponDefs
+      if(!this.player._weaponMods) this.player._weaponMods={};
+      const wid=this.player.weapon.id;
+      if(!this.player._weaponMods[wid]) this.player._weaponMods[wid]={spreadMul:1,magMul:1};
+      if(it.id==="scope") this.player._weaponMods[wid].spreadMul*=0.6;
+      else if(it.id==="extmag") this.player._weaponMods[wid].magMul*=1.5;
+    }
+    else return;
     it.qty=(it.qty||1)-1;
     if(it.qty<=0) this.player.inv.splice(idx,1);
     this.audio.hit();
@@ -1161,14 +1677,22 @@ class Game{
   }
 
   onShotHit(hit,weapon,dir){
-    this.particles.spawn(hit.point,dir.clone().multiplyScalar(-2).add(v3(0,1,0)),0.25,0.05);
+    // Spark particles on hit
+    for(let i=0;i<3;i++){
+      this.particles.spawn(hit.point.clone(),v3(rand(-2,2),rand(0.5,2.5),rand(-2,2)),0.2+Math.random()*0.15,0.03+Math.random()*0.03);
+    }
+    // Impact decal on non-enemy surfaces
     const root=hit.parent;
     if(root?.userData?.enemy){
-      root.userData.hp-=weapon.damage;
+      root.userData.hp-=weapon.damage*(1+this.player.skills.ironSights*0.08);
       root.userData.aggro=1;
       this.audio.hit();
       this.enemyBarShow(root.userData);
       if(root.userData.hp<=0) this.killEnemy(root);
+    }else{
+      // Decal on wall/surface
+      const normal=dir.clone().negate().normalize();
+      this.particles.spawnDecal(hit.point,normal);
     }
   }
 
@@ -1182,12 +1706,27 @@ class Game{
 
   killEnemy(root){
     const ud=root.userData;
+    // Grant XP
+    const xpGain=ud.kind==="crawler"?25:40;
+    this.player.xp+=xpGain;
+    const xpForLevel=this.player.level*100;
+    if(this.player.xp>=xpForLevel){
+      this.player.xp-=xpForLevel;
+      this.player.level++;
+      this.player.skillPoints++;
+      this.player.hpMax+=5+this.player.skills.toughness*15;
+      this.ui.showToast(`Level Up! Lv.${this.player.level} (+1 Skill Point)`,2.5);
+    }
     if(!ud.lootDone){
       ud.lootDone=true;
-      const r=Math.random();
-      if(r<0.45) this.spawnLoot(root.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*2)});
-      else if(r<0.75) this.spawnLoot(root.position.clone(),{id:"ration",qty:1});
-      else this.spawnLoot(root.position.clone(),{id:"stim",qty:1});
+      const scavBonus=1+this.player.skills.scavenger*0.15;
+      const r=Math.random()/scavBonus;
+      if(r<0.30) this.spawnLoot(root.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*3)});
+      else if(r<0.50) this.spawnLoot(root.position.clone(),{id:"ration",qty:1});
+      else if(r<0.65) this.spawnLoot(root.position.clone(),{id:"stim",qty:1});
+      else if(r<0.78) this.spawnLoot(root.position.clone(),{id:"cloth",qty:Math.floor(1+Math.random()*2)});
+      else if(r<0.88) this.spawnLoot(root.position.clone(),{id:"circuits",qty:1});
+      else this.spawnLoot(root.position.clone(),{id:"radaway",qty:1});
     }
     for(let i=0;i<8;i++) this.particles.spawn(root.position.clone().add(v3(0,0.8,0)),v3(rand(-2,2),rand(1,3),rand(-2,2)),0.35,0.05);
     this.world.enemies.remove(root);
@@ -1258,12 +1797,40 @@ class Game{
       this.quest.log=["Find supplies","Reach the first shrine outpost"];
       this.ui.showToast("Objective updated.");
     }
+    // Animated vault door opening
+    this.audio.tone(80,0.5,"sawtooth",0.15);
+    setTimeout(()=>this.audio.tone(60,0.8,"sawtooth",0.12),300);
+    this._doorAnim={t:0,dur:2.5};
+    this.ui.showToast("Vault 811 door is opening...",2.0);
+  }
+
+  _completeExitVault(){
     this.player.inVault=false;
     this.vault.setVisible(false);
     this.player.pos.set(0,1.6,20);
     this.player.yaw=Math.PI;
     this.audio.startAmbient("waste");
-    this.ui.showToast("The air tastes like old lightning.");
+
+    // Music swell
+    this.audio.tone(220,1.5,"sine",0.15);
+    setTimeout(()=>this.audio.tone(330,1.2,"sine",0.12),200);
+    setTimeout(()=>this.audio.tone(440,1.0,"sine",0.10),500);
+
+    // Dramatic reveal lighting
+    this._revealLight=new THREE.PointLight(0xffe0aa,3.0,80,1.5);
+    this._revealLight.position.set(0,8,22);
+    this.scene.add(this._revealLight);
+    this._revealTimer=3.0;
+
+    this.ui.showToast("The air tastes like old lightning.",3.0);
+
+    // Enemy intro moment — spawn a nearby enemy for tension
+    if(this.world.enemies.children.length===0){
+      const e=this.world.makeEnemy("crawler");
+      e.position.set(12,0,35);
+      this.world.enemies.add(e);
+      this.scene.add(e);
+    }
   }
 
   // Enemies AI
@@ -1355,10 +1922,12 @@ class Game{
 
   damagePlayer(amount){
     if(this.mode!=="play") return;
-    this.player.hp=Math.max(0,this.player.hp-amount);
+    const totalArmor=this.player.armor+this.player.skills.mutantHide*5;
+    const reduced=Math.max(1,amount-totalArmor*0.3);
+    this.player.hp=Math.max(0,this.player.hp-reduced);
     this.audio.hurt();
     this.shakeKick(0.12);
-    this.ui.showToast(`Hit! (-${amount} HP)`,1.1);
+    this.ui.showToast(`Hit! (-${Math.round(reduced)} HP)`,1.1);
     if(this.player.hp<=0) this.onPlayerDead();
   }
 
@@ -1382,11 +1951,11 @@ class Game{
     const y=Math.sin(ang)*70;
     const x=Math.cos(ang)*60;
     this.sun.position.set(x,Math.max(10,y+40),20);
-    const night=clamp((0.25-Math.sin(ang))*0.6+0.2,0.08,0.55);
-    this.scene.fog.color.setHSL(0.62,0.55,night);
-    this.sky.material.color.setHSL(0.62,0.55,night*0.9);
-    this.sun.intensity=0.9+(1-night)*0.8;
-    this.vaultLight.intensity=this.player.inVault?1.6:0.0;
+    const night=clamp((0.25-Math.sin(ang))*0.6+0.2,0.12,0.55);
+    this.scene.fog.color.setHSL(0.62,0.45,night*1.1);
+    this.sky.material.color.setHSL(0.62,0.45,night*0.95);
+    this.sun.intensity=1.2+(1-night)*1.0;
+    this.vaultLight.intensity=this.player.inVault?2.2:0.0;
   }
 
   // Camera shake
@@ -1407,6 +1976,10 @@ class Game{
     const p=this.player;
     this.ui.hpFill.style.width=`${(p.hp/p.hpMax)*100}%`;
     this.ui.stFill.style.width=`${(p.stamina/p.staminaMax)*100}%`;
+    this.ui.radFill.style.width=`${(p.radiation/p.radiationMax)*100}%`;
+    const xpForLevel=p.level*100;
+    this.ui.xpFill.style.width=`${(p.xp/xpForLevel)*100}%`;
+    this.ui.armorLbl.textContent=`Armor: ${p.armor}  Lv.${p.level}${p.skillPoints>0?" ["+p.skillPoints+" SP]":""}`;
 
     const w=p.weapon, id=w.id;
     this.ui.ammo.querySelector(".small").textContent=w.name;
@@ -1417,6 +1990,13 @@ class Game{
     this.ui.comp.textContent=`Heading: ${deg}°  •  ${p.inVault?"Vault 811":"Wasteland"}`;
 
     this.ui.obj.textContent=this.quest?.log?.length?`Objective: ${this.quest.log[0]}`:"";
+
+    // Radiation warning flash
+    if(p.radiation>60){
+      this.ui.radFill.style.background=`rgba(255,${Math.floor(100-p.radiation)},50,.85)`;
+    }else{
+      this.ui.radFill.style.background="rgba(100,255,50,.75)";
+    }
   }
 
   _bindMouseShooting(){
@@ -1448,7 +2028,7 @@ class Game{
     // global hotkeys
     if(this.input.pressed("Escape")){
       if(this.mode==="play") this.showPause();
-      else if(this.mode==="pause"||this.mode==="inventory"){ this.resume(); this.ui.inv.style.display="none"; }
+      else if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){ this.resume(); this.ui.inv.style.display="none"; this.ui.skillTree.style.display="none"; this.ui.craftPanel.style.display="none"; }
       else if(this.mode==="intro") this.endIntro();
     }
 
@@ -1463,6 +2043,8 @@ class Game{
       if(this.input.pressed("KeyR")) this.player.requestReload(this);
       if(this.input.pressed("KeyI")) this.toggleInventory();
       if(this.input.pressed("KeyE")) this.doInteract();
+      if(this.input.pressed("KeyK")) this.toggleSkillTree();
+      if(this.input.pressed("KeyJ")) this.toggleCrafting();
 
       if(this.autoFire && this.player.weapon.fireMode==="auto") this.player.tryFire(this);
     }
@@ -1484,7 +2066,7 @@ class Game{
       this.renderer.render(this.scene,this.camera);
       return;
     }
-    if(this.mode==="pause"||this.mode==="inventory"){
+    if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){
       this.updateTime(dt);
       this.renderHUD();
       this.renderer.render(this.scene,this.camera);
@@ -1496,13 +2078,45 @@ class Game{
     this.player.update(dt,this.input,this);
     this.vault.setVisible(this.player.inVault);
 
-    if(!this.player.inVault) this.world.update(this.player.pos);
+    if(!this.player.inVault){
+      this.world.update(this.player.pos);
+      // Biome-based fog density
+      const tx=Math.floor(this.player.pos.x/this.world.tileSize);
+      const tz=Math.floor(this.player.pos.z/this.world.tileSize);
+      const biome=this.world.biome(tx,tz);
+      const fog=this.world.fogForBiome(biome);
+      this.scene.fog.near=lerp(this.scene.fog.near,fog.near,2*dt);
+      this.scene.fog.far=lerp(this.scene.fog.far,fog.far,2*dt);
+    }
+
+    // Vault door animation
+    if(this._doorAnim){
+      this._doorAnim.t+=dt;
+      const progress=clamp(this._doorAnim.t/this._doorAnim.dur,0,1);
+      const ease=1-Math.pow(1-progress,3);
+      this.vault.door.rotation.y=ease*Math.PI*0.5;
+      this.vault.door.position.x=-ease*3;
+      if(progress>=1){
+        this._doorAnim=null;
+        this._completeExitVault();
+      }
+    }
 
     this.updateInteract();
     if(!this.player.inVault) this.updateEnemies(dt);
     this.updateSpit(dt);
     this.particles.update(dt);
     this.updateShake(dt);
+
+    // Fade reveal light
+    if(this._revealTimer!==undefined && this._revealTimer>0){
+      this._revealTimer-=dt;
+      if(this._revealLight) this._revealLight.intensity=3.0*(this._revealTimer/3.0);
+      if(this._revealTimer<=0 && this._revealLight){
+        this.scene.remove(this._revealLight);
+        this._revealLight=null;
+      }
+    }
 
     // regen only when safe outside
     if(!this.player.inVault && !this.anyEnemyNear(14)){

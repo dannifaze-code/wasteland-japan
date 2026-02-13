@@ -78,6 +78,22 @@ function makeUI(){
     .skill-desc{font-size:11px;opacity:.7}
     .skill-lvl{font-size:13px;opacity:.9}
     .craft-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(600px,90vw);max-height:75vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.92);display:none;pointer-events:auto;padding:18px}
+    .pipboy-overlay{position:absolute;left:50%;top:58%;transform:translate(-50%,-50%);width:min(520px,80vw);max-height:60vh;overflow:auto;border-radius:10px;border:2px solid rgba(80,255,80,.45);background:rgba(5,18,5,.92);color:#33ff66;font-family:"Courier New",Courier,monospace;display:none;pointer-events:auto;padding:0;box-shadow:0 0 40px rgba(30,255,60,.15),inset 0 0 30px rgba(0,0,0,.5)}
+    .pipboy-overlay *{color:#33ff66}
+    .pipboy-tabs{display:flex;border-bottom:1px solid rgba(80,255,80,.3);background:rgba(0,0,0,.3)}
+    .pipboy-tab{flex:1;text-align:center;padding:10px 8px;cursor:pointer;pointer-events:auto;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;opacity:.6;border-bottom:2px solid transparent;transition:opacity .15s}
+    .pipboy-tab:hover{opacity:.85}
+    .pipboy-tab.active{opacity:1;border-bottom-color:#33ff66;background:rgba(50,255,80,.06)}
+    .pipboy-content{padding:14px 16px;min-height:200px}
+    .pipboy-content .k{color:#33ff66}
+    .pipboy-content .skill-row{border-bottom-color:rgba(80,255,80,.15)}
+    .pipboy-content .chip{border-color:rgba(80,255,80,.35);background:rgba(50,255,80,.08);color:#33ff66}
+    .pipboy-content .chip:hover{background:rgba(50,255,80,.18)}
+    .pipboy-content .inv-item{border-bottom-color:rgba(80,255,80,.1)}
+    .pipboy-content .inv-list{border-color:rgba(80,255,80,.2)}
+    .pipboy-content .panel{border-color:rgba(80,255,80,.2)}
+    .pipboy-content .actions .chip{color:#33ff66}
+    .pipboy-scanline{pointer-events:none;position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);border-radius:10px}
   `;
   const hud=el("div","hud",root);
 
@@ -130,6 +146,14 @@ function makeUI(){
   const skillTree=el("div","skill-tree",root);
   const craftPanel=el("div","craft-panel",root);
 
+  // Pip-Boy overlay
+  const pipboy=el("div","pipboy-overlay",root);
+  const pipTabs=el("div","pipboy-tabs",pipboy);
+  const tabNames=["STAT","INV","SKILLS","CRAFT"];
+  const pipTabBtns=tabNames.map(name=>{const t=el("div","pipboy-tab",pipTabs); t.textContent=name; t.dataset.tab=name.toLowerCase(); return t;});
+  const pipContent=el("div","pipboy-content",pipboy);
+  el("div","pipboy-scanline",pipboy);
+
   const wm=el("div","wm",hud); wm.textContent="Wasteland Japan — Vault 811";
 
   function showToast(msg, sec=2.2){
@@ -138,7 +162,7 @@ function makeUI(){
     showToast._t=setTimeout(()=>toast.classList.remove("on"), sec*1000);
   }
 
-  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel};
+  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent};
 }
 
 // ---------------- Audio (simple synth) ----------------
@@ -238,7 +262,7 @@ class Input{
     this.keys=new Map();
     this.just=new Set();
     this.mouse={dx:0,dy:0,locked:false,sens:0.0022};
-    window.addEventListener("keydown",e=>{ if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
+    window.addEventListener("keydown",e=>{ if(e.code==="Tab") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
     window.addEventListener("keyup",e=>this.keys.set(e.code,false));
     document.addEventListener("mousemove",e=>{ if(!this.mouse.locked) return; this.mouse.dx+=e.movementX; this.mouse.dy+=e.movementY;});
     document.addEventListener("pointerlockchange",()=>{this.mouse.locked=document.pointerLockElement===this.dom;});
@@ -255,6 +279,7 @@ function defaultSave(){
   return {
     hasSave:false,
     timeOfDay:0.3,
+    fov:70,
     player:{
       pos:{x:0,y:1.6,z:6}, yaw:Math.PI, pitch:0,
       hp:100, stamina:100, inVault:true,
@@ -854,6 +879,12 @@ class Player{
     this.weaponBob=0;
     this.weaponKick=0;
     this.weaponKickReturn=0;
+
+    // Pip-Boy (first-person arm + device attached to camera)
+    this.fpPipboy=this._buildFPPipboy();
+    this.camera.add(this.fpPipboy);
+    this.pipboyAnim=0; // 0 = stowed, 1 = fully raised
+    this.pipboyActive=false;
   }
   _buildModel(){
     const g=new THREE.Group();
@@ -869,7 +900,15 @@ class Player{
     const armL=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.6,0.22),bodyMat);
     armL.position.set(-0.42,1.15,0); armL.castShadow=true;
     const armR=armL.clone(); armR.position.x=0.42;
-    g.add(torso,head,legL,legR,armL,armR);
+    // Pip-Boy on left forearm (third-person)
+    const pbMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.5,metalness:0.6});
+    const pbBody=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.12,0.2),pbMat);
+    pbBody.position.set(-0.42,0.95,0.04); pbBody.castShadow=true;
+    const pbScreen=new THREE.Mesh(new THREE.PlaneGeometry(0.12,0.08),new THREE.MeshStandardMaterial({color:0x115511,emissive:0x22cc44,emissiveIntensity:0.5,roughness:0.3}));
+    pbScreen.position.set(-0.42,0.958,0.145); pbScreen.castShadow=false;
+    const pbGlow=new THREE.PointLight(0x33ff66,0.3,1.5,2);
+    pbGlow.position.set(-0.42,1.0,0.15);
+    g.add(torso,head,legL,legR,armL,armR,pbBody,pbScreen,pbGlow);
     return g;
   }
   _buildFPWeapon(){
@@ -905,6 +944,31 @@ class Player{
     const flare2=flare.clone(); flare2.rotation.z=Math.PI/4;
     g.add(flash,flare,flare2);
     g.visible=false;
+    return g;
+  }
+  _buildFPPipboy(){
+    const g=new THREE.Group();
+    const skinMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
+    // Left forearm
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.22,0.11),skinMat);
+    arm.position.set(0,0,0);
+    // Pip-Boy device body
+    const pbMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.4,metalness:0.65});
+    const pbBody=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.10,0.17),pbMat);
+    pbBody.position.set(0,0.06,0);
+    // Pip-Boy screen
+    const screenMat=new THREE.MeshStandardMaterial({color:0x0a2a0a,emissive:0x22cc44,emissiveIntensity:0.45,roughness:0.2});
+    const pbScreen=new THREE.Mesh(new THREE.PlaneGeometry(0.11,0.065),screenMat);
+    pbScreen.position.set(0,0.112,0);
+    pbScreen.rotation.x=-Math.PI/2;
+    // Subtle green glow
+    const pbGlow=new THREE.PointLight(0x33ff66,0.25,1.2,2);
+    pbGlow.position.set(0,0.13,0);
+    g.add(arm,pbBody,pbScreen,pbGlow);
+    // Stowed position (below and off-screen to the left)
+    g.position.set(-0.35,-0.55,-0.35);
+    g.rotation.set(0.2,0.3,0);
+    g.visible=true;
     return g;
   }
   weight(){return invWeight(this.inv);}
@@ -1046,14 +1110,30 @@ class Player{
     this.model.position.y-=1.6;
     this.model.rotation.y=this.yaw;
 
+    // Pip-Boy animation lerp
+    const pipTarget=this.pipboyActive?1:0;
+    this.pipboyAnim=lerp(this.pipboyAnim,pipTarget,8*dt);
+
     // First-person weapon visibility & animation
-    this.fpWeapon.visible=(this.camMode==="fp");
+    const showWeapon=(this.camMode==="fp")&&(this.pipboyAnim<0.3);
+    this.fpWeapon.visible=showWeapon;
     if(this.camMode==="fp"&&this._fpBasePos){
       const bp=this._fpBasePos;
       const bobX=Math.sin(this.weaponBob)*0.006;
       const bobY=Math.cos(this.weaponBob*2)*0.004;
       this.fpWeapon.position.set(bp.x+bobX,bp.y+bobY,bp.z-this.weaponKick*0.06);
       this.fpWeapon.rotation.x=-this.weaponKick*0.5;
+    }
+
+    // First-person Pip-Boy position (lerps from stowed to raised)
+    if(this.fpPipboy){
+      this.fpPipboy.visible=(this.camMode==="fp");
+      const t=this.pipboyAnim;
+      // Stowed: off-screen left/below; Raised: centered in front of camera, looking at screen
+      const sx=-0.35, sy=-0.55, sz=-0.35;
+      const ex=-0.18, ey=-0.28, ez=-0.38;
+      this.fpPipboy.position.set(lerp(sx,ex,t),lerp(sy,ey,t),lerp(sz,ez,t));
+      this.fpPipboy.rotation.set(lerp(0.2,-0.6,t),lerp(0.3,0.15,t),0);
     }
   }
   updateCamera(dt,env){
@@ -1063,7 +1143,9 @@ class Player{
       this.camera.position.copy(this.pos).add(v3(0,0.1,0));
       this.camera.rotation.order="YXZ";
       this.camera.rotation.y=this.camYaw;
-      this.camera.rotation.x=this.camPitch;
+      // Smoothly tilt camera down when Pip-Boy is active
+      const pipPitch=lerp(0,-0.55,this.pipboyAnim);
+      this.camera.rotation.x=this.camPitch+pipPitch;
     }else{
       const back=v3(Math.sin(this.camYaw),0,Math.cos(this.camYaw));
       const side=v3(Math.cos(this.camYaw),0,-Math.sin(this.camYaw));
@@ -1149,7 +1231,8 @@ class Game{
     this.scene=new THREE.Scene();
     this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
-    this.camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.05,700);
+    this.fov=70;
+    this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.05,700);
     this.scene.add(this.camera);
 
     this.clock=new THREE.Clock();
@@ -1158,6 +1241,7 @@ class Game{
     this.particles=new Particles(this.scene);
 
     this.save=loadSave();
+    if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.player=new Player(this.camera);
     this.player.fromSave(this.save.player);
     this.scene.add(this.player.model);
@@ -1165,9 +1249,10 @@ class Game{
     this.vault=new Vault(this.scene);
     this.world=new World(this.scene,this.save.world.seed);
 
-    this.mode="title"; // title intro play pause inventory
+    this.mode="title"; // title intro play pause inventory skills crafting pipboy
     this.autoFire=false;
     this.shake={amp:0,t:0};
+    this.pipboyTab="stat";
 
     this.quest=this.save.world.quest;
 
@@ -1290,6 +1375,162 @@ class Game{
     this.ui.scrim.style.display="none";
     this.ui.inv.style.display="none";
     this.ui.cut.style.display="none";
+    this.ui.pipboy.style.display="none";
+    this.player.pipboyActive=false;
+  }
+
+  openPipboy(tab){
+    if(this.mode==="pipboy"&&this.pipboyTab===tab){ this.closePipboy(); return; }
+    this.mode="pipboy";
+    this.pipboyTab=tab||"stat";
+    this.player.pipboyActive=true;
+    // Force first-person when opening pip-boy
+    if(this.player.camMode==="tp"){ this.player.camMode="fp"; }
+    this.ui.inv.style.display="none";
+    this.ui.skillTree.style.display="none";
+    this.ui.craftPanel.style.display="none";
+    this.ui.scrim.style.display="none";
+    this.ui.pipboy.style.display="block";
+    this.renderPipboy();
+  }
+
+  closePipboy(){
+    this.player.pipboyActive=false;
+    this.ui.pipboy.style.display="none";
+    this.mode="play";
+  }
+
+  renderPipboy(){
+    const tab=this.pipboyTab;
+    // Update tab styling
+    this.ui.pipTabBtns.forEach(btn=>{
+      btn.classList.toggle("active",btn.dataset.tab===tab);
+      btn.onclick=()=>{ this.pipboyTab=btn.dataset.tab; this.renderPipboy(); };
+    });
+    const c=this.ui.pipContent;
+    c.innerHTML="";
+    if(tab==="stat") this._renderPipStat(c);
+    else if(tab==="inv") this._renderPipInv(c);
+    else if(tab==="skills") this._renderPipSkills(c);
+    else if(tab==="craft") this._renderPipCraft(c);
+  }
+
+  _renderPipStat(c){
+    const p=this.player;
+    c.innerHTML=`
+      <div style="font-weight:900;font-size:16px;margin-bottom:10px;letter-spacing:1px">STATUS</div>
+      <div class="k">HP: ${Math.round(p.hp)} / ${p.hpMax}</div>
+      <div class="k">Stamina: ${Math.round(p.stamina)} / ${p.staminaMax}</div>
+      <div class="k">Radiation: ${Math.round(p.radiation)} / ${p.radiationMax}</div>
+      <div class="k">Armor: ${p.armor}</div>
+      <div class="k">Level: ${p.level} (XP: ${p.xp}/${p.level*100})</div>
+      <div style="height:10px"></div>
+      <div style="font-weight:900;font-size:14px;margin-bottom:6px;letter-spacing:1px">AMMO</div>
+      <div class="k">Pistol: ${p.mag.pistol}/${p.reserve.pistol}</div>
+      <div class="k">Rifle: ${p.mag.rifle}/${p.reserve.rifle}</div>
+      <div class="k">Shotgun: ${p.mag.shotgun}/${p.reserve.shotgun}</div>
+      <div style="height:10px"></div>
+      <div style="font-weight:900;font-size:14px;margin-bottom:6px;letter-spacing:1px">CONTROLS</div>
+      <div class="k">Tab: Pip-Boy • C: Camera • R: Reload</div>
+      <div class="k">E: Interact • Esc: Pause/Settings</div>
+    `;
+  }
+
+  _renderPipInv(c){
+    const p=this.player;
+    const w=p.weight();
+    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:4px;letter-spacing:1px">INVENTORY</div>`;
+    html+=`<div class="k" style="margin-bottom:10px">Weight: ${w.toFixed(1)}/${p.maxWeight} • Equipped: ${p.weapon.name} • Armor: ${p.armor}</div>`;
+    html+=`<div class="inv-list">`;
+    p.inv.forEach((item,idx)=>{
+      const def=ItemDB[item.id]||{name:item.id,type:"junk",weight:0,desc:""};
+      const useLabel=def.type==="consumable"?"Use":def.type==="weapon"?"Equip":def.type==="armor"?"Wear":def.type==="mod"?"Apply":"Inspect";
+      html+=`<div class="inv-item" style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid rgba(80,255,80,.1)">
+        <div><div style="font-weight:800">${def.name} <span class="k">x${item.qty||1}</span></div><div class="k" style="font-size:11px">${def.desc} • ${def.weight}wt</div></div>
+        <div style="display:flex;gap:6px">
+          <div class="chip" data-pipuse="${idx}">${useLabel}</div>
+          <div class="chip" data-pipdrop="${idx}">Drop</div>
+        </div>
+      </div>`;
+    });
+    html+=`</div>`;
+    c.innerHTML=html;
+    c.querySelectorAll("[data-pipuse]").forEach(btn=>{
+      btn.addEventListener("click",()=>{ this.useItem(parseInt(btn.dataset.pipuse,10)); this.renderPipboy(); });
+    });
+    c.querySelectorAll("[data-pipdrop]").forEach(btn=>{
+      btn.addEventListener("click",()=>{ this.dropItem(parseInt(btn.dataset.pipdrop,10)); this.renderPipboy(); });
+    });
+  }
+
+  _renderPipSkills(c){
+    const p=this.player;
+    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:4px;letter-spacing:1px">SKILLS</div>`;
+    html+=`<div class="k" style="margin-bottom:10px">Level ${p.level} • Skill Points: ${p.skillPoints}</div>`;
+    for(const [key,def] of Object.entries(SkillDefs)){
+      const lvl=p.skills[key]||0;
+      const canUpgrade=p.skillPoints>0 && lvl<def.maxLvl;
+      html+=`<div class="skill-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(80,255,80,.15)">
+        <div><div style="font-weight:800;font-size:14px">${def.name}</div><div class="k" style="font-size:11px">${def.desc}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="k">${lvl}/${def.maxLvl}</span>
+          ${canUpgrade?`<div class="chip" data-pipskill="${key}">+</div>`:`<span class="k" style="opacity:.4">MAX</span>`}
+        </div>
+      </div>`;
+    }
+    c.innerHTML=html;
+    c.querySelectorAll("[data-pipskill]").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const sk=btn.dataset.pipskill;
+        if(p.skillPoints>0 && p.skills[sk]<SkillDefs[sk].maxLvl){
+          p.skills[sk]++;
+          p.skillPoints--;
+          if(sk==="toughness") p.hpMax=100+p.skills.toughness*15;
+          this.ui.showToast(`${SkillDefs[sk].name} upgraded to ${p.skills[sk]}`);
+          this.renderPipboy();
+        }
+      });
+    });
+  }
+
+  _renderPipCraft(c){
+    const p=this.player;
+    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:10px;letter-spacing:1px">CRAFTING</div>`;
+    for(const recipe of CraftRecipes){
+      const canCraft=recipe.needs.every(n=>{
+        const have=p.inv.find(x=>x.id===n.id);
+        return have && (have.qty||1)>=n.qty;
+      });
+      const needsStr=recipe.needs.map(n=>`${ItemDB[n.id]?.name||n.id} x${n.qty}`).join(", ");
+      const resultDef=ItemDB[recipe.result.id];
+      html+=`<div class="skill-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(80,255,80,.15)">
+        <div><div style="font-weight:800;font-size:14px">${resultDef?.name||recipe.name}</div><div class="k" style="font-size:11px">Needs: ${needsStr}</div></div>
+        <div>${canCraft?`<div class="chip" data-pipcraft="${recipe.id}">Craft</div>`:`<span class="k" style="opacity:.4">Missing</span>`}</div>
+      </div>`;
+    }
+    c.innerHTML=html;
+    c.querySelectorAll("[data-pipcraft]").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const recipe=CraftRecipes.find(r=>r.id===btn.dataset.pipcraft);
+        if(!recipe) return;
+        const canCraft=recipe.needs.every(n=>{
+          const have=p.inv.find(x=>x.id===n.id);
+          return have && (have.qty||1)>=n.qty;
+        });
+        if(!canCraft){this.ui.showToast("Missing materials."); return;}
+        for(const n of recipe.needs){
+          const have=p.inv.find(x=>x.id===n.id);
+          have.qty=(have.qty||1)-n.qty;
+          if(have.qty<=0) p.inv.splice(p.inv.indexOf(have),1);
+        }
+        const existing=p.inv.find(x=>x.id===recipe.result.id);
+        if(existing) existing.qty=(existing.qty||1)+recipe.result.qty;
+        else p.inv.push({...recipe.result});
+        this.audio.hit();
+        this.ui.showToast(`Crafted: ${ItemDB[recipe.result.id]?.name||recipe.result.id}`);
+        this.renderPipboy();
+      });
+    });
   }
 
   openSettings(returnTo){
@@ -1322,9 +1563,22 @@ class Game{
 
     wrap.append(row1,row2,row3);
 
+    const row4=document.createElement("div"); row4.className="row";
+    row4.innerHTML=`<label>Field of View: <span id="fov-val">${this.fov}</span></label>`;
+    const fovSlider=document.createElement("input");
+    fovSlider.type="range"; fovSlider.min="60"; fovSlider.max="120"; fovSlider.step="1"; fovSlider.value=String(this.fov);
+    fovSlider.addEventListener("input",()=>{
+      this.fov=parseInt(fovSlider.value,10);
+      this.camera.fov=this.fov;
+      this.camera.updateProjectionMatrix();
+      row4.querySelector("#fov-val").textContent=this.fov;
+    });
+    row4.appendChild(fovSlider);
+    wrap.appendChild(row4);
+
     const kb=document.createElement("div");
     kb.style.marginTop="8px"; kb.style.opacity="0.85";
-    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • I Inventory • K Skills • J Craft • Esc Pause</div>`;
+    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • Tab Pip-Boy • Esc Pause</div>`;
     wrap.appendChild(kb);
 
     this.ui.btns.innerHTML="";
@@ -1416,6 +1670,7 @@ class Game{
   doSave(){
     this.save.player=this.player.toSave();
     this.save.world.quest=this.quest;
+    this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
   }
@@ -1425,6 +1680,7 @@ class Game{
     if(!this.save.hasSave){ this.ui.showToast("No save to load."); return; }
     this.player.fromSave(this.save.player);
     this.quest=this.save.world.quest;
+    if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
@@ -1590,8 +1846,8 @@ class Game{
       <div class="k">Shotgun: ${this.player.mag.shotgun}/${this.player.reserve.shotgun}</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Controls</div>
-      <div class="k">• C: camera • R: reload • E: interact</div>
-      <div class="k">• K: skills • J: craft • Esc: pause</div>
+      <div class="k">• Tab: Pip-Boy • C: camera • R: reload</div>
+      <div class="k">• E: interact • Esc: pause</div>
     `;
   }
 
@@ -2029,8 +2285,13 @@ class Game{
     // global hotkeys
     if(this.input.pressed("Escape")){
       if(this.mode==="play") this.showPause();
+      else if(this.mode==="pipboy") this.closePipboy();
       else if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){ this.resume(); this.ui.inv.style.display="none"; this.ui.skillTree.style.display="none"; this.ui.craftPanel.style.display="none"; }
       else if(this.mode==="intro") this.endIntro();
+    }
+    if(this.input.pressed("Tab")){
+      if(this.mode==="play") this.openPipboy("stat");
+      else if(this.mode==="pipboy") this.closePipboy();
     }
 
     if(this.mode==="play"){
@@ -2042,10 +2303,10 @@ class Game{
       if(this.input.pressed("Digit2")) this.player.setWeapon(1);
       if(this.input.pressed("Digit3")) this.player.setWeapon(2);
       if(this.input.pressed("KeyR")) this.player.requestReload(this);
-      if(this.input.pressed("KeyI")) this.toggleInventory();
+      if(this.input.pressed("KeyI")) this.openPipboy("inv");
       if(this.input.pressed("KeyE")) this.doInteract();
-      if(this.input.pressed("KeyK")) this.toggleSkillTree();
-      if(this.input.pressed("KeyJ")) this.toggleCrafting();
+      if(this.input.pressed("KeyK")) this.openPipboy("skills");
+      if(this.input.pressed("KeyJ")) this.openPipboy("craft");
 
       if(this.autoFire && this.player.weapon.fireMode==="auto") this.player.tryFire(this);
     }
@@ -2069,6 +2330,15 @@ class Game{
     }
     if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){
       this.updateTime(dt);
+      this.renderHUD();
+      this.renderer.render(this.scene,this.camera);
+      return;
+    }
+    if(this.mode==="pipboy"){
+      this.updateTime(dt);
+      // Keep updating player models for smooth Pip-Boy animation
+      this.player.updateModels(dt);
+      this.player.updateCamera(dt,this);
       this.renderHUD();
       this.renderer.render(this.scene,this.camera);
       return;

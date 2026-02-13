@@ -929,7 +929,7 @@ class Player{
     const gripMat=new THREE.MeshStandardMaterial({color:0x3a2e22,roughness:0.9});
     // barrel
     const barrel=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.04,0.5),metalMat);
-    barrel.position.set(0,0.005,0.2); barrel.castShadow=true;
+    barrel.position.set(0,0.005,0.2); barrel.castShadow=true; // Y offset prevents z-fighting with body mesh
     // body
     const bodyMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:0.6,metalness:0.4,polygonOffset:true,polygonOffsetFactor:1});
     const body=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.28),bodyMat);
@@ -1229,7 +1229,7 @@ class Player{
       cam.addScaledVector(side,sideOff);
       cam.y+=heightOff;
       // Apply pitch to camera offset (look up/down moves camera)
-      cam.y+=-this.camPitch*dist*0.3;
+      cam.y-=this.camPitch*dist*0.3;
       cam.y=Math.max(cam.y,0.5);
       this.camera.position.lerp(cam,1-Math.exp(-10*dt));
       // Look at shoulder height with pitch influence

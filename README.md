@@ -1,4 +1,4 @@
-# Wasteland Japan — Vault 811 (Vertical Slice)
+# Wasteland Japan — Vault 811 
 
 ## Controls
 - Click game to lock mouse

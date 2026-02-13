@@ -1,19 +1,5 @@
 # Wasteland Japan — Vault 811 (Vertical Slice)
 
-## Run locally (recommended)
-Because this project uses ES Modules, you must run it from a local server (not file://).
-
-### Option A: Python
-```bash
-python -m http.server 8080
-```
-Then open: http://localhost:8080
-
-### Option B: Node
-```bash
-npx serve .
-```
-
 ## Controls
 - Click game to lock mouse
 - WASD: move

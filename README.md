@@ -1,5 +1,6 @@
 # Wasteland Japan — Vault 811 
 
+](https://dannifaze-code.github.io/wasteland-japan/)
 ## Controls
 - Click game to lock mouse
 - WASD: move

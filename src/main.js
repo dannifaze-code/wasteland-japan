@@ -843,6 +843,7 @@ class Player{
     // First-person weapon view model
     this.fpWeapon=this._buildFPWeapon();
     this.camera.add(this.fpWeapon);
+    this._updateFPWeapon();
 
     // Muzzle flash
     this.muzzleFlash=this._buildMuzzleFlash();
@@ -919,14 +920,15 @@ class Player{
     const body=this.fpWeapon.children[1];
     if(id==="pistol"){
       barrel.scale.set(1,1,0.7); body.scale.set(1,1,0.8);
-      this.fpWeapon.position.set(0.28,-0.24,-0.4);
+      this._fpBasePos={x:0.28,y:-0.24,z:-0.4};
     }else if(id==="rifle"){
       barrel.scale.set(1,1,1.4); body.scale.set(1.1,1.1,1.3);
-      this.fpWeapon.position.set(0.25,-0.22,-0.38);
+      this._fpBasePos={x:0.25,y:-0.22,z:-0.38};
     }else{
       barrel.scale.set(1.3,1.3,1.0); body.scale.set(1.4,1.2,1.0);
-      this.fpWeapon.position.set(0.26,-0.22,-0.36);
+      this._fpBasePos={x:0.26,y:-0.22,z:-0.36};
     }
+    this.fpWeapon.position.set(this._fpBasePos.x,this._fpBasePos.y,this._fpBasePos.z);
   }
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
@@ -1046,14 +1048,12 @@ class Player{
 
     // First-person weapon visibility & animation
     this.fpWeapon.visible=(this.camMode==="fp");
-    if(this.camMode==="fp"){
-      const basePos=this.fpWeapon.position.clone();
+    if(this.camMode==="fp"&&this._fpBasePos){
+      const bp=this._fpBasePos;
       const bobX=Math.sin(this.weaponBob)*0.006;
       const bobY=Math.cos(this.weaponBob*2)*0.004;
-      this.fpWeapon.position.y+=bobY;
-      this.fpWeapon.position.x+=bobX;
+      this.fpWeapon.position.set(bp.x+bobX,bp.y+bobY,bp.z-this.weaponKick*0.06);
       this.fpWeapon.rotation.x=-this.weaponKick*0.5;
-      this.fpWeapon.position.z+=-this.weaponKick*0.06;
     }
   }
   updateCamera(dt,env){
@@ -1150,6 +1150,7 @@ class Game{
     this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
     this.camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.05,700);
+    this.scene.add(this.camera);
 
     this.clock=new THREE.Clock();
     this.input=new Input(this.renderer.domElement);

@@ -1115,6 +1115,7 @@ class Player{
     this.pipboyAnim=lerp(this.pipboyAnim,pipTarget,8*dt);
 
     // First-person weapon visibility & animation
+    // Hide weapon when Pip-Boy raise animation is past 30%
     const showWeapon=(this.camMode==="fp")&&(this.pipboyAnim<0.3);
     this.fpWeapon.visible=showWeapon;
     if(this.camMode==="fp"&&this._fpBasePos){
@@ -1143,7 +1144,7 @@ class Player{
       this.camera.position.copy(this.pos).add(v3(0,0.1,0));
       this.camera.rotation.order="YXZ";
       this.camera.rotation.y=this.camYaw;
-      // Smoothly tilt camera down when Pip-Boy is active
+      // Smoothly tilt camera down (-0.55 rad ≈ 31°) to view the Pip-Boy on the wrist
       const pipPitch=lerp(0,-0.55,this.pipboyAnim);
       this.camera.rotation.x=this.camPitch+pipPitch;
     }else{
@@ -1391,6 +1392,10 @@ class Game{
     this.ui.craftPanel.style.display="none";
     this.ui.scrim.style.display="none";
     this.ui.pipboy.style.display="block";
+    // Bind tab buttons once per open (onclick replaces, no leak)
+    this.ui.pipTabBtns.forEach(btn=>{
+      btn.onclick=()=>{ this.pipboyTab=btn.dataset.tab; this.renderPipboy(); };
+    });
     this.renderPipboy();
   }
 
@@ -1402,10 +1407,8 @@ class Game{
 
   renderPipboy(){
     const tab=this.pipboyTab;
-    // Update tab styling
     this.ui.pipTabBtns.forEach(btn=>{
       btn.classList.toggle("active",btn.dataset.tab===tab);
-      btn.onclick=()=>{ this.pipboyTab=btn.dataset.tab; this.renderPipboy(); };
     });
     const c=this.ui.pipContent;
     c.innerHTML="";
@@ -1431,7 +1434,7 @@ class Game{
       <div class="k">Shotgun: ${p.mag.shotgun}/${p.reserve.shotgun}</div>
       <div style="height:10px"></div>
       <div style="font-weight:900;font-size:14px;margin-bottom:6px;letter-spacing:1px">CONTROLS</div>
-      <div class="k">Tab: Pip-Boy • C: Camera • R: Reload</div>
+      <div class="k">Tab: Pip-Boy (I/K/J for tabs) • C: Camera • R: Reload</div>
       <div class="k">E: Interact • Esc: Pause/Settings</div>
     `;
   }
@@ -1578,7 +1581,7 @@ class Game{
 
     const kb=document.createElement("div");
     kb.style.marginTop="8px"; kb.style.opacity="0.85";
-    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • Tab Pip-Boy • Esc Pause</div>`;
+    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • Tab Pip-Boy (I Inv, K Skills, J Craft) • Esc Pause</div>`;
     wrap.appendChild(kb);
 
     this.ui.btns.innerHTML="";
@@ -1846,8 +1849,8 @@ class Game{
       <div class="k">Shotgun: ${this.player.mag.shotgun}/${this.player.reserve.shotgun}</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Controls</div>
-      <div class="k">• Tab: Pip-Boy • C: camera • R: reload</div>
-      <div class="k">• E: interact • Esc: pause</div>
+      <div class="k">• Tab: Pip-Boy (I/K/J for tabs) • C: camera</div>
+      <div class="k">• R: reload • E: interact • Esc: pause</div>
     `;
   }
 

@@ -7,6 +7,8 @@ import { NPCManager } from "./npc.js";
 import { DialogueController } from "./dialogue.js";
 import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
 import { Quest } from "./quest.js";
+import { attemptLockpick, isUnlocked, lockHintLabel } from "./locks.js";
+import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTerminal } from "./terminal.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -99,6 +101,7 @@ function makeUI(){
     .pipboy-content .actions .chip{color:#33ff66}
     .pipboy-scanline{pointer-events:none;position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);border-radius:10px}
     ${DIALOGUE_CSS}
+    ${TERMINAL_CSS}
   `;
   const hud=el("div","hud",root);
 
@@ -160,6 +163,7 @@ function makeUI(){
   el("div","pipboy-scanline",pipboy);
 
   const dlg=buildDialogueUI(root);
+  const term=buildTerminalUI(root);
 
   const wm=el("div","wm",hud); wm.textContent="Wasteland Japan — Vault 811";
 
@@ -169,7 +173,7 @@ function makeUI(){
     showToast._t=setTimeout(()=>toast.classList.remove("on"), sec*1000);
   }
 
-  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent,dlg};
+  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent,dlg,term};
 }
 
 // ---------------- Audio (simple synth) ----------------
@@ -625,7 +629,16 @@ class World{
   }
   makeCrate(rng,biome){
     const m=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.0,1.1), biome===0?this.matRust:this.matWood);
-    m.userData={interact:true,kind:"container",opened:false,name:biome===0?"Locker":"Crate"};
+    const ud={interact:true,kind:"container",opened:false,name:biome===0?"Locker":"Crate"};
+    // ~30% of crates/lockers are locked with a random lock level 1–3
+    if(rng()<0.30){
+      const lvl=Math.floor(1+rng()*3); // 1–3
+      const uid=`crate_${Date.now()}_${Math.floor(rng()*100000)}`;
+      ud.lockId=uid;
+      ud.lockLevel=lvl;
+      ud.name=(biome===0?"Locked Locker":"Locked Crate");
+    }
+    m.userData=ud;
     m.castShadow=true; m.receiveShadow=true;
     return m;
   }
@@ -822,13 +835,13 @@ class Vault{
 
     const console=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.2,1.0),this.matDoor);
     console.position.set(-10,0.6,9);
-    console.userData={interact:true,kind:"terminal",name:"Terminal"};
+    console.userData={interact:true,kind:"terminal",name:"Terminal",terminalId:"vault_terminal"};
     console.castShadow=true;
     this.group.add(console);
 
     const locker=new THREE.Mesh(new THREE.BoxGeometry(1.2,2.8,1.0),this.matDoor);
     locker.position.set(12,1.4,4);
-    locker.userData={interact:true,kind:"container",opened:false,name:"Armory Locker"};
+    locker.userData={interact:true,kind:"container",opened:false,name:"Armory Locker",lockId:"armory_locker",lockLevel:2};
     locker.castShadow=true;
     this.group.add(locker);
 
@@ -2147,7 +2160,18 @@ class Game{
     }
     if(t?.userData?.interact){
       this.ui.hint.style.display="block";
-      this.ui.hint.textContent=`E: ${(t.userData.kind==="vaultDoor")?"Open":"Use"} ${t.userData.name||"Object"}`;
+      let hintText;
+      const ud=t.userData;
+      if(ud.lockId && ud.lockLevel && !isUnlocked(this.questSys, ud.lockId)){
+        hintText=`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name||"Object"}`;
+      } else if(ud.kind==="vaultDoor"){
+        hintText=`E: Open ${ud.name||"Object"}`;
+      } else if(ud.kind==="terminal"){
+        hintText=`E: Access ${ud.name||"Terminal"}`;
+      } else {
+        hintText=`E: Use ${ud.name||"Object"}`;
+      }
+      this.ui.hint.textContent=hintText;
       this.player.interactTarget=t; return;
     }
     this.ui.hint.style.display="none";
@@ -2176,6 +2200,24 @@ class Game{
     }
     if(ud.interact){
       if(ud.kind==="container"){
+        // Lock check
+        if(ud.lockId && ud.lockLevel && !isUnlocked(this.questSys, ud.lockId)){
+          const result=attemptLockpick(this.player, this.questSys, ud);
+          if(!result.success){
+            this.ui.showToast(result.message);
+            this.audio.click();
+            // Forced-attempt noise: increment alarm counter
+            this.questSys.incFlag("lockpick_failures");
+            return;
+          }
+          // Unlocked
+          this.ui.showToast(result.message);
+          this.audio.hit();
+          if(result.forced){
+            this.questSys.incFlag("lockpick_alarms");
+          }
+          return; // next interact will open the now-unlocked container
+        }
         if(ud.opened){ this.ui.showToast("Empty."); this.audio.click(); }
         else{
           ud.opened=true;
@@ -2187,7 +2229,7 @@ class Game{
           this.audio.hit();
         }
       }else if(ud.kind==="terminal"){
-        this.ui.showToast("Terminal: Vault logs are redacted.");
+        this.openTerminal(ud.terminalId || "vault_terminal");
         this.audio.click();
       }else if(ud.kind==="vaultDoor"){
         this.exitVault();
@@ -2238,6 +2280,53 @@ class Game{
     }
     this.dialogueCtrl.end();
     this._dialogueNpcData=null;
+    this.mode="play";
+  }
+
+  // ---- Terminal ----
+  openTerminal(terminalId){
+    const def=TerminalDefs[terminalId];
+    if(!def){ this.ui.showToast("Terminal offline."); return; }
+    this.mode="terminal";
+    this.ui.hint.style.display="none";
+    renderTerminal(this.ui.term, def, this.questSys, {
+      onClose: ()=>this.closeTerminalUI(),
+      onAction: (act)=>this._terminalAction(act),
+      showToast: (msg)=>this.ui.showToast(msg)
+    });
+    this.audio.click();
+  }
+
+  _terminalAction(act){
+    if(act.kind==="unlock"){
+      const flagKey=`unlocked:${act.targetLockId}`;
+      if(this.questSys.getFlag(flagKey)){
+        this.ui.showToast("Already unlocked.");
+        return;
+      }
+      this.questSys.setFlag(flagKey, true);
+      this.ui.showToast(`Remote unlock: ${act.targetLockId.replace(/_/g," ")}.`);
+      this.audio.hit();
+      // Re-render terminal to update button states
+      const def=TerminalDefs[this._currentTerminalId()] || null;
+      if(def) renderTerminal(this.ui.term, def, this.questSys, {
+        onClose: ()=>this.closeTerminalUI(),
+        onAction: (a)=>this._terminalAction(a),
+        showToast: (msg)=>this.ui.showToast(msg)
+      });
+    }
+  }
+
+  _currentTerminalId(){
+    // Read from the title text to identify the current terminal
+    for(const [id,def] of Object.entries(TerminalDefs)){
+      if(this.ui.term.titleEl.textContent===def.title) return id;
+    }
+    return null;
+  }
+
+  closeTerminalUI(){
+    closeTerminal(this.ui.term);
     this.mode="play";
   }
 
@@ -2491,6 +2580,7 @@ class Game{
     if(this.input.pressed("Escape")){
       if(this.mode==="play") this.showPause();
       else if(this.mode==="dialogue") this.closeDialogue();
+      else if(this.mode==="terminal") this.closeTerminalUI();
       else if(this.mode==="pipboy") this.closePipboy();
       else if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){ this.resume(); this.ui.inv.style.display="none"; this.ui.skillTree.style.display="none"; this.ui.craftPanel.style.display="none"; }
       else if(this.mode==="intro") this.endIntro();
@@ -2562,6 +2652,12 @@ class Game{
     if(this.mode==="dialogue"){
       this.updateTime(dt);
       this.npcMgr.update(dt, this.player.pos, this.dialogueCtrl.currentNpcId);
+      this.renderHUD();
+      this.renderer.render(this.scene,this.camera);
+      return;
+    }
+    if(this.mode==="terminal"){
+      this.updateTime(dt);
       this.renderHUD();
       this.renderer.render(this.scene,this.camera);
       return;

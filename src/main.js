@@ -15,6 +15,7 @@ import { DungeonManager, DungeonDefs } from "./dungeon.js";
 import { CompanionManager, CompanionDefs } from "./companion.js";
 import { HeightmapTerrain, MAP_SIZE, MAP_HALF, HEIGHT_SCALE } from "./terrain.js";
 import { Worldspace } from "./worldspace.js";
+import { FactionWorld, FACTIONS, FACTION_POIS } from "./factionWorld.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -448,7 +449,9 @@ class World{
     this.rockMat=new THREE.MeshStandardMaterial({color:0x2a2e35,roughness:1});
     this.matRail=new THREE.MeshStandardMaterial({color:0x4a3a2a,roughness:0.8,metalness:0.3});
     this.matShrine=new THREE.MeshStandardMaterial({color:0x3d1a1a,roughness:0.85});
+    this._tileCallbacks=[];
   }
+  addTileCallback(cb){ this._tileCallbacks.push(cb); }
   key(tx,tz){return `${tx},${tz}`;}
   biome(tx,tz){
     const a=Math.abs(tx)+Math.abs(tz);
@@ -607,9 +610,11 @@ class World{
 
     this.tiles.set(k,{g,tx,tz,biome,interactables,enemies});
     this.static.add(g);
+    for(const cb of this._tileCallbacks) if(cb.onCreated) cb.onCreated(k,g,biome,tx,tz);
   }
   disposeTile(k){
     const t=this.tiles.get(k); if(!t) return;
+    for(const cb of this._tileCallbacks) if(cb.onDisposed) cb.onDisposed(k);
     for(const c of t.interactables) this.interact.remove(c);
     for(const e of t.enemies) this.enemies.remove(e);
     // Dispose geometries and materials to free GPU memory
@@ -1542,6 +1547,15 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
 
+    // Faction world (patrol squads, skirmishes, POI ownership)
+    this.factionWorld=new FactionWorld(this.scene, this.world, this.questSys, this.save.world.seed);
+    if(this.save.world.factionWorld) this.factionWorld.fromSave(this.save.world.factionWorld);
+    this.factionWorld.onPlayerDamage=(dmg)=>this.damagePlayer(dmg);
+    this.world.addTileCallback({
+      onCreated:(k,g,biome,tx,tz)=>this.factionWorld.onTileCreated(k,g,biome,tx,tz),
+      onDisposed:(k)=>this.factionWorld.onTileDisposed(k)
+    });
+
     // Companion system
     this.companionMgr=new CompanionManager(this.scene);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
@@ -1804,6 +1818,8 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.factionWorld.questSys=this.questSys;
+    this.factionWorld.fromSave(null); // reset for new game
     this.useHeightmap=true;
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
@@ -1830,6 +1846,8 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.factionWorld.questSys=this.questSys;
+    if(this.save.world.factionWorld) this.factionWorld.fromSave(this.save.world.factionWorld);
     this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
@@ -1875,6 +1893,7 @@ class Game{
     this.save.world.quest=this.quest;
     this.save.world.questSys=this.questSys.toSave();
     this.save.world.companion=this.companionMgr.toSave();
+    this.save.world.factionWorld=this.factionWorld.toSave();
     this.save.world.useHeightmap=this.useHeightmap;
     // Save dungeon cleared states to prevent re-looting
     const clearedDungeons={};
@@ -1895,6 +1914,7 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
+    if(this.save.world.factionWorld) this.factionWorld.fromSave(this.save.world.factionWorld);
     // Restore dungeon cleared states to prevent re-looting
     if(this.save.world.clearedDungeons){
       for(const [id,cleared] of Object.entries(this.save.world.clearedDungeons)){
@@ -2158,6 +2178,8 @@ class Game{
     add(this.npcMgr.group);
     add(this.npcMgr.outsideGroup);
     if(this.outpost) add(this.outpost.group);
+    // Faction world units + banners
+    if(this.factionWorld) add(this.factionWorld.group);
     // Terrain mesh for ground intersection
     if(this.useHeightmap && this.terrain.mesh && !this.player.inVault) add(this.terrain.mesh);
     // Worldspace POI interactables
@@ -2178,8 +2200,8 @@ class Game{
   findRoot(obj){
     let o=obj;
     while(o && o.parent && o.parent!==this.scene){
-      if(o.userData.enemy||o.userData.loot||o.userData.interact||o.userData.npc) return o;
-      if(o.parent.userData.enemy||o.parent.userData.loot||o.parent.userData.interact||o.parent.userData.npc) return o.parent;
+      if(o.userData.enemy||o.userData.loot||o.userData.interact||o.userData.npc||o.userData.factionUnit||o.userData.factionBanner) return o;
+      if(o.parent.userData.enemy||o.parent.userData.loot||o.parent.userData.interact||o.parent.userData.npc||o.parent.userData.factionUnit||o.parent.userData.factionBanner) return o.parent;
       o=o.parent;
     }
     return obj;
@@ -2198,6 +2220,22 @@ class Game{
       this.audio.hit();
       this.enemyBarShow(root.userData);
       if(root.userData.hp<=0) this.killEnemy(root);
+    }else if(root?.userData?.factionUnit){
+      // Faction unit hit: damage + rep penalty for attacking faction members
+      const ud=root.userData;
+      ud.hp-=weapon.damage*(1+this.player.skills.ironSights*0.08);
+      this.audio.hit();
+      this.enemyBarShow(ud);
+      // Attacking a faction lowers rep with that faction
+      this.questSys.changeRep(ud.faction,-3);
+      // Make the unit and squad-mates hostile toward the player
+      ud.state="engage"; ud._targetRef={userData:{isPlayer:true,hp:1}}; ud.targetId="__player__";
+      for(const u of this.factionWorld.allUnits){
+        if(u.userData.squadId===ud.squadId && u!==root){
+          u.userData.state="engage"; u.userData._targetRef={userData:{isPlayer:true,hp:1}}; u.userData.targetId="__player__";
+        }
+      }
+      if(ud.hp<=0) this.killFactionUnit(root);
     }else{
       // Decal on wall/surface
       const normal=dir.clone().negate().normalize();
@@ -2264,6 +2302,32 @@ class Game{
     this.scene.remove(root);
   }
 
+  killFactionUnit(root){
+    const ud=root.userData;
+    // XP for killing faction units
+    const xpGain=30;
+    this.player.xp+=xpGain;
+    const xpForLevel=this.player.level*100;
+    if(this.player.xp>=xpForLevel){
+      this.player.xp-=xpForLevel; this.player.level++; this.player.skillPoints++;
+      this.player.hpMax=computeHpMax(this.player);
+      this.player.hp=Math.min(this.player.hp,this.player.hpMax);
+      this.ui.showToast(`Level Up! Lv.${this.player.level} (+1 Skill Point)`,2.5);
+    }
+    // Loot drop (low chance)
+    if(!ud.lootDone){
+      ud.lootDone=true;
+      const r=Math.random();
+      if(r<0.20) this.spawnLoot(root.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*2)});
+      else if(r<0.35) this.spawnLoot(root.position.clone(),{id:"cloth",qty:1});
+      else if(r<0.45) this.spawnLoot(root.position.clone(),{id:"circuits",qty:1});
+    }
+    // Particles
+    for(let i=0;i<6;i++) this.particles.spawn(root.position.clone().add(v3(0,0.8,0)),v3(rand(-2,2),rand(1,3),rand(-2,2)),0.35,0.05);
+    // Remove from faction world
+    this.factionWorld._killUnit(root);
+  }
+
   // Interaction (throttled to reduce per-frame raycast cost)
   _interactTimer=0;
   updateInteract(){
@@ -2314,6 +2378,8 @@ class Game{
         hintText=`E: Rest at ${ud.name||"Object"}`;
       } else if(ud.kind==="noticeBoard"){
         hintText=`E: Read ${ud.name||"Object"}`;
+      } else if(ud.kind==="factionBanner"){
+        hintText=`E: Inspect ${ud.name||"Banner"}`;
       } else {
         hintText=`E: Use ${ud.name||"Object"}`;
       }
@@ -2408,6 +2474,13 @@ class Game{
         const msg=topObj?`${lore}\nObjective: ${topObj}`:lore;
         this.ui.showToast(msg,3.5);
         this.questSys.setFlag("discoveredShrineOutpost",true);
+        this.audio.click();
+      }else if(ud.kind==="factionBanner"){
+        // Show who controls this POI
+        const faction=ud.faction;
+        const fName=faction===FACTIONS.WARDENS?"Shrine Wardens":"Rail Ghost Union";
+        const stance=this.factionWorld.getStanceToPlayer(faction);
+        this.ui.showToast(`${fName} territory. Stance: ${stance}.`,3);
         this.audio.click();
       }
     }
@@ -2604,6 +2677,7 @@ class Game{
     this.world.static.visible=false;
     this.world.interact.visible=false;
     this.world.enemies.visible=false;
+    this.factionWorld.setVisible(false);
     this.outpost.group.visible=false;
     this.npcMgr.setOutsideVisible(false);
     this.vault.setExteriorVisible(false);
@@ -2655,6 +2729,7 @@ class Game{
     }
     this.world.interact.visible=true;
     this.world.enemies.visible=true;
+    this.factionWorld.setVisible(true);
     this.outpost.group.visible=true;
     this.npcMgr.setOutsideVisible(true);
     this.vault.setExteriorVisible(true);
@@ -3134,11 +3209,13 @@ class Game{
       this.world.static.visible=!outsideActive;
       this.world.interact.visible=outsideActive; // keep interactables (crates from tiles)
       this.world.enemies.visible=outsideActive;
+      this.factionWorld.setVisible(outsideActive);
     }
     if(inDungeon){
       this.world.static.visible=false;
       this.world.interact.visible=false;
       this.world.enemies.visible=false;
+      this.factionWorld.setVisible(false);
       if(this.useHeightmap){
         this.terrain.setVisible(false);
         this.worldspace.setVisible(false);
@@ -3184,6 +3261,10 @@ class Game{
       }else{
         this.world.update(this.player.pos);
       }
+      // Update faction world (patrols, skirmishes, rep hostility)
+      this.factionWorld.setVisible(true);
+      const loadedKeys=new Set(this.world.tiles.keys());
+      this.factionWorld.update(dt, this.player.pos, loadedKeys, this.useHeightmap?this.terrain:null);
       // Biome-based fog density
       const tx=Math.floor(this.player.pos.x/this.world.tileSize);
       const tz=Math.floor(this.player.pos.z/this.world.tileSize);

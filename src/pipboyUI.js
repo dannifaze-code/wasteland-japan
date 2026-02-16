@@ -344,6 +344,28 @@ function _renderFactions(c, game) {
     </div>`;
   }
 
+  // POI ownership / war state
+  if (game.factionWorld) {
+    html += `<div class="section-title" style="margin-top:16px">Territory Control</div>`;
+    const fw = game.factionWorld;
+    const POI_NAMES = {
+      "kuroshima_relay": "Kuroshima Rail Relay",
+      "warden_torii": "Warden Checkpoint Torii",
+      "coastal_yard": "Coastal Yard",
+      "shrine_outpost_edge": "Shrine Outpost Perimeter",
+      "depot_junction": "Rail Depot Junction",
+      "hilltop_shrine": "Hilltop Shrine Watch",
+    };
+    for (const [poiId, owner] of Object.entries(fw.poiOwnership)) {
+      const name = POI_NAMES[poiId] || poiId;
+      const ownerName = owner === "wardens" ? "Shrine Wardens" : owner === "rail" ? "Rail Ghost Union" : owner;
+      const color = owner === "wardens" ? "#5588ff" : "#ffaa33";
+      html += `<div style="padding:4px 0;border-bottom:1px solid rgba(80,255,80,.08);font-size:12px">
+        <span style="color:${color};">\u25A0</span> ${esc(name)} — <span style="opacity:.75">${esc(ownerName)}</span>
+      </div>`;
+    }
+  }
+
   c.innerHTML = html;
 }
 

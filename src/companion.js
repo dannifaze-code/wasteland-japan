@@ -82,6 +82,7 @@ function buildCompanionMesh(def) {
   g.add(torso, head, legL, legR, armL, armR, badge, marker);
 
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.userData._compMarker = marker;
   return g;
 }
 
@@ -172,12 +173,11 @@ export class CompanionManager {
 
     // Marker bob
     comp._bobT += dt * 2.5;
-    mesh.traverse(c => {
-      if (c.userData._compMarker) {
-        c.position.y = def.height * 1.03 + Math.sin(comp._bobT) * 0.05;
-        c.rotation.y += dt * 2;
-      }
-    });
+    const marker = mesh.userData._compMarker;
+    if (marker) {
+      marker.position.y = def.height * 1.03 + Math.sin(comp._bobT) * 0.05;
+      marker.rotation.y += dt * 2;
+    }
 
     // Find nearest enemy
     let nearestEnemy = null;

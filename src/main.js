@@ -1159,7 +1159,7 @@ class Player{
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
       equipped:this.equipped,ammo:{...this.reserve},mags:{...this.mag},inv:JSON.parse(JSON.stringify(this.inv)),maxWeight:this.maxWeight,
-      radiation:this.radiation,armor:this.armor,armorEquipped:this.armorEquipped,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
+      radiation:this.radiation,armor:this.armor,armorEquipped:this.armorEquipped,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills},hpMax:this.hpMax};
   }
   fromSave(s){
     this.pos.set(s.pos.x,s.pos.y,s.pos.z);
@@ -1171,12 +1171,14 @@ class Player{
     this.inv=Array.isArray(s.inv)?s.inv:[];
     this.maxWeight=s.maxWeight||55;
     this.radiation=s.radiation||0;
+    this._lastRadThreshold=Math.floor(this.radiation/25)*25;
     this.armor=s.armor||0;
     this.armorEquipped=s.armorEquipped||null;
     this.xp=s.xp||0;
     this.level=s.level||1;
     this.skillPoints=s.skillPoints||0;
     if(s.skills) this.skills={...this.skills,...s.skills};
+    this.hpMax=s.hpMax||100;
   }
   update(dt,input,env){
     const {dx,dy}=input.consumeMouse();
@@ -1848,6 +1850,12 @@ class Game{
     this.save.world.questSys=this.questSys.toSave();
     this.save.world.companion=this.companionMgr.toSave();
     this.save.world.useHeightmap=this.useHeightmap;
+    // Save dungeon cleared states to prevent re-looting
+    const clearedDungeons={};
+    for(const [id,d] of Object.entries(this.dungeonMgr.dungeons)){
+      if(d._contentSpawned) clearedDungeons[id]=true;
+    }
+    this.save.world.clearedDungeons=clearedDungeons;
     this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
@@ -1861,6 +1869,12 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
+    // Restore dungeon cleared states to prevent re-looting
+    if(this.save.world.clearedDungeons){
+      for(const [id,cleared] of Object.entries(this.save.world.clearedDungeons)){
+        if(cleared && this.dungeonMgr.dungeons[id]) this.dungeonMgr.dungeons[id]._contentSpawned=true;
+      }
+    }
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
@@ -1926,7 +1940,7 @@ class Game{
         if(p.skillPoints>0 && p.skills[sk]<SkillDefs[sk].maxLvl){
           p.skills[sk]++;
           p.skillPoints--;
-          if(sk==="toughness") p.hpMax=100+p.skills.toughness*15;
+          if(sk==="toughness") p.hpMax+=15;
           this.ui.showToast(`${SkillDefs[sk].name} upgraded to ${p.skills[sk]}`);
           this.renderSkillTree();
         }
@@ -2623,6 +2637,11 @@ class Game{
       this.player.pos.copy(ret.pos);
       this.player.yaw=ret.yaw;
     }
+    // Teleport companion to player after dungeon exit to prevent desync
+    if(this.companionMgr.isActive() && this.companionMgr.active.mesh){
+      this.companionMgr.active.mesh.position.copy(this.player.pos).add(v3(-2,0,-1));
+      this.companionMgr.active.mesh.position.y=0;
+    }
     this.audio.startAmbient("waste");
     this.ui.showToast("Returned to the surface.",2.0);
   }
@@ -2801,6 +2820,14 @@ class Game{
 
   onPlayerDead(){
     this.ui.showToast("You fell. The wasteland keeps what it takes.",2.8);
+    // Exit dungeon cleanly if inside one
+    if(this.dungeonMgr.isInDungeon()){
+      this.dungeonMgr.exit(this.player);
+      if(this._dungeonEnemies){
+        for(const e of this._dungeonEnemies) this.scene.remove(e);
+        this._dungeonEnemies=[];
+      }
+    }
     this.player.hp=this.player.effectiveMaxHP();
     this.player.stamina=this.player.staminaMax;
     this.player.inVault=true;
@@ -2810,6 +2837,7 @@ class Game{
       this.terrain.setVisible(false);
       this.worldspace.setVisible(false);
     }
+    this.dungeonMgr.setDoorsVisible(false);
     this.player.pos.set(0,1.6,6);
     this.audio.startAmbient("vault");
     this.quest.step=0;
@@ -3280,7 +3308,7 @@ class Game{
 
     // Update companion
     if(this.companionMgr.isActive()){
-      this.companionMgr.setVisible(!this.player.inVault);
+      this.companionMgr.setVisible(!this.player.inVault && !inDungeon);
       const enemyGroup=inDungeon?null:this.world.enemies;
       this.companionMgr.update(dt, this.player.pos, enemyGroup, (enemy, dmg)=>{
         enemy.userData.hp-=dmg;

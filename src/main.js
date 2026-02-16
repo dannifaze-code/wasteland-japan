@@ -9,7 +9,7 @@ import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.
 import { Quest } from "./quest.js";
 import { attemptLockpick, isUnlocked, lockHintLabel } from "./locks.js";
 import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTerminal } from "./terminal.js";
-import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
+import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone, isOutpostHostile, isOutpostRecovered, applyHostileVisuals, applyNeutralVisuals } from "./outpost.js";
 import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
 import { DungeonManager, DungeonDefs } from "./dungeon.js";
 import { CompanionManager, CompanionDefs } from "./companion.js";
@@ -1528,6 +1528,7 @@ class Game{
     // Build outpost (meshes + interactables)
     this.outpost=buildOutpost(this.scene, this.world);
     this.outpost.group.visible=false;
+    this._outpostHostile=false; // tracks current hostility state for visuals/behavior
 
     // Build dungeon system
     this.dungeonMgr=new DungeonManager(this.scene, this.world);
@@ -1546,6 +1547,10 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+
+    // Restore outpost hostility state from persisted quest data
+    this._outpostHostile=isOutpostHostile(this.questSys);
+    if(this._outpostHostile) applyHostileVisuals(this.outpost);
 
     // Faction world (patrol squads, skirmishes, POI ownership)
     this.factionWorld=new FactionWorld(this.scene, this.world, this.questSys, this.save.world.seed);
@@ -1820,6 +1825,8 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     this.factionWorld.questSys=this.questSys;
     this.factionWorld.fromSave(null); // reset for new game
+    this._outpostHostile=false;
+    applyNeutralVisuals(this.outpost);
     this.useHeightmap=true;
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
@@ -1849,6 +1856,10 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     this.factionWorld.questSys=this.questSys;
     if(this.save.world.factionWorld) this.factionWorld.fromSave(this.save.world.factionWorld);
+    // Restore outpost hostility visuals from quest state
+    this._outpostHostile=isOutpostHostile(this.questSys);
+    if(this._outpostHostile) applyHostileVisuals(this.outpost);
+    else applyNeutralVisuals(this.outpost);
     this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
@@ -1917,6 +1928,10 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
     if(this.save.world.factionWorld) this.factionWorld.fromSave(this.save.world.factionWorld);
+    // Restore outpost hostility visuals from quest state
+    this._outpostHostile=isOutpostHostile(this.questSys);
+    if(this._outpostHostile) applyHostileVisuals(this.outpost);
+    else applyNeutralVisuals(this.outpost);
     // Restore dungeon cleared states to prevent re-looting
     if(this.save.world.clearedDungeons){
       for(const [id,cleared] of Object.entries(this.save.world.clearedDungeons)){
@@ -3321,11 +3336,28 @@ class Game{
         }
       }
 
+      // --- Outpost hostility state update ---
+      const nowHostile=isOutpostHostile(this.questSys);
+      if(nowHostile && !this._outpostHostile){
+        // Transition to hostile
+        this._outpostHostile=true;
+        applyHostileVisuals(this.outpost);
+        // Make outpost-area faction units (Wardens) attack on sight via heat
+        this.questSys.changeHeat("wardens",40);
+      } else if(!nowHostile && this._outpostHostile && isOutpostRecovered(this.questSys)){
+        // Transition to neutral (recovery)
+        this._outpostHostile=false;
+        applyNeutralVisuals(this.outpost);
+      }
+
       // --- Safe zone enforcement (every 3 seconds, not every frame) ---
+      // Disabled when outpost is hostile
       this._safeZoneTimer=(this._safeZoneTimer||0)+dt;
       if(this._safeZoneTimer>SAFE_ZONE_CHECK_INTERVAL){
         this._safeZoneTimer=0;
-        enforceSafeZone(this.world.enemies);
+        if(!this._outpostHostile){
+          enforceSafeZone(this.world.enemies);
+        }
       }
 
       // World trigger: torii proximity (Q4 Shrine Warden Warning)

@@ -1051,6 +1051,11 @@ export const DialogueTrees = {
     start: "greeting",
     startFn: (player, game) => {
       const q = Q(game);
+      // Hostile state: betrayed OR rep ≤ -50 (unless recovered)
+      if (q.getFlag("q5_betrayed") || q.getRep("wardens") <= -50) {
+        if (q.getRep("wardens") > -10) return "greeting_recovered";
+        return "greeting_hostile";
+      }
       if (q.getStage("q5_outpost_accord") >= 30) return "greeting_done";
       if (q.getStage("q5_outpost_accord") >= 20) return "greeting_task_active";
       if (q.getStage("q5_outpost_accord") >= 10) return "greeting_q5active";
@@ -1198,6 +1203,7 @@ export const DialogueTrees = {
             conditionLabel: "[3 Scrap + 2 Cloth]"
           },
           { text: "Not yet. Still working on it.", next: "q5_wait" },
+          { text: "I'm done helping the Wardens. This shrine means nothing to me.", next: "q5_betray_confirm" },
           { text: "Can I trade while I'm here?", next: "vendor" }
         ]
       },
@@ -1215,6 +1221,7 @@ export const DialogueTrees = {
             conditionLabel: "[3 Scrap + 2 Cloth]"
           },
           { text: "Still working on it.", next: "q5_wait" },
+          { text: "I'm done helping the Wardens. This shrine means nothing to me.", next: "q5_betray_confirm" },
           { text: "Let me trade.", next: "vendor" }
         ]
       },
@@ -1225,6 +1232,33 @@ export const DialogueTrees = {
         choices: [
           { text: "[End]", next: null }
         ]
+      },
+      q5_betray_confirm: {
+        id: "q5_betray_confirm",
+        speaker: "Warden Aoi",
+        text: "...What did you just say? You'd spit on the shrine's protection? On everything the Wardens have done for you? Think carefully — there's no taking this back.",
+        choices: [
+          { text: "I meant it. The Wardens are a relic. I'm done.", next: "q5_betray_outcome" },
+          { text: "Wait — I didn't mean it. I'll finish the task.", next: "q5_wait" }
+        ]
+      },
+      q5_betray_outcome: {
+        id: "q5_betray_outcome",
+        speaker: "Warden Aoi",
+        text: "Then you're no longer welcome here. Guards! This one has turned against the shrine. You've made a grave mistake, vault dweller.",
+        choices: [
+          { text: "[Leave]", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.setStage("q5_outpost_accord", 31);
+          q.setFlag("q5_betrayed", true);
+          q.failObjective("Clear 3 enemies near the outpost");
+          q.failObjective("Bring Warden Aoi 3 Scrap and 2 Cloth");
+          q.changeRep("wardens", -60);
+          q.addLog("Betrayed the Shrine Wardens. The outpost is now hostile.");
+          game.ui.showToast("The Shrine Outpost is now hostile!", 3.0);
+        }
       },
       q5_complete_a: {
         id: "q5_complete_a",
@@ -1374,6 +1408,31 @@ export const DialogueTrees = {
         choices: [
           { text: "[End]", next: null }
         ]
+      },
+      // --- Hostile state (betrayal / rep ≤ -50) ---
+      greeting_hostile: {
+        id: "greeting_hostile",
+        speaker: "Warden Aoi",
+        text: "You dare show your face here? The Wardens remember what you did. Leave now — or my guards will make you.",
+        choices: [
+          { text: "[Leave]", next: null }
+        ]
+      },
+      // --- Recovery state (rep recovered above -10) ---
+      greeting_recovered: {
+        id: "greeting_recovered",
+        speaker: "Warden Aoi",
+        text: "...You've changed. The land speaks of your deeds. The Wardens will stand down — for now. Don't make us regret this.",
+        choices: [
+          { text: "I won't. Thank you, Aoi.", next: "goodbye" },
+          { text: "Can I trade?", next: "vendor" }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.setFlag("q5_betrayed", false);
+          q.addLog("The Shrine Outpost has returned to neutral. The Wardens have stood down.");
+          game.ui.showToast("Shrine Outpost: hostility ended.", 3.0);
+        }
       }
     }
   },

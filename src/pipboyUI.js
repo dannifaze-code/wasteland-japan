@@ -319,7 +319,6 @@ function _renderFactions(c, game) {
       <div class="stat-line" style="font-size:12px">Rep: ${rep} (${repLabel}) \u2022 Vendor prices: x${mult.toFixed(1)}</div>
     </div>`;
   }
-  }
 
   c.innerHTML = html;
 }

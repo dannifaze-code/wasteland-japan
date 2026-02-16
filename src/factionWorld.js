@@ -22,6 +22,16 @@ const HEAT_PATROL_BONUS     = 30;
 const HEAT_HUNTER_SPAWN     = 60;
 const HEAT_ATTACK_ON_SIGHT  = 80;
 
+// Roadblock thresholds
+const ROADBLOCK_SPAWN_REP   = -30;
+const ROADBLOCK_ATTACK_REP  = -50;
+const ROADBLOCK_REMOVE_REP  = -20;
+const ROADBLOCK_WARN_DIST   = 15;
+const ROADBLOCK_SQUAD_SIZE  = 3;
+
+// Roadblock POI — deterministic position near shrine_outpost_edge
+const ROADBLOCK_POI_ID      = "shrine_outpost_edge";
+
 // Lightweight seeded RNG (same algo as main.js)
 function mulberry32(seed) {
   return function () {
@@ -53,11 +63,19 @@ function ensureMaterials() {
 }
 
 // Shared geometries (created once)
-let _bodyGeom, _bandGeom;
+let _bodyGeom, _bandGeom, _barricadeGeom;
 function ensureGeometries() {
   if (_bodyGeom) return;
   _bodyGeom = new THREE.SphereGeometry(0.45, 10, 10);
   _bandGeom = new THREE.CylinderGeometry(0.48, 0.48, 0.12, 10);
+  _barricadeGeom = new THREE.BoxGeometry(3.0, 1.2, 0.6);
+}
+
+// Shared barricade material (created once)
+let _matBarricade;
+function ensureBarricadeMaterial() {
+  if (_matBarricade) return;
+  _matBarricade = new THREE.MeshStandardMaterial({ color: 0x4a4a3a, roughness: 1.0 });
 }
 
 // ---- Unit factory ----
@@ -172,6 +190,12 @@ export class FactionWorld {
     // Resolved skirmishes (set of "squadA_squadB" keys to avoid replaying)
     this.resolvedSkirmishes = new Set();
 
+    // Roadblock state
+    this._roadblockActive = false;
+    this._roadblockGroup = null;   // THREE.Group for barricade meshes
+    this._roadblockUnits = [];     // squad units for the roadblock
+    this._roadblockWarned = false; // player has been warned this encounter
+
     // Squad counter
     this._nextSquadId = 0;
 
@@ -285,6 +309,9 @@ export class FactionWorld {
   update(dt, playerPos, loadedTileKeys, terrain) {
     this._skirmishTimer -= dt;
 
+    // ---- Roadblock lifecycle ----
+    this._updateRoadblock(playerPos);
+
     for (let i = this.allUnits.length - 1; i >= 0; i--) {
       const u = this.allUnits[i];
       if (!u.parent) { this.allUnits.splice(i, 1); continue; }
@@ -314,6 +341,123 @@ export class FactionWorld {
       this._skirmishTimer = 0.5;
       this._detectSkirmishes(playerPos);
     }
+  }
+
+  // ---- Roadblock management ----
+
+  _updateRoadblock(playerPos) {
+    const rep = this.questSys.getRep(FACTIONS.WARDENS);
+
+    // Remove roadblock when rep improves above threshold
+    if (this._roadblockActive && rep > ROADBLOCK_REMOVE_REP) {
+      this._removeRoadblock();
+      return;
+    }
+
+    // Spawn roadblock when rep drops low enough
+    if (!this._roadblockActive && rep <= ROADBLOCK_SPAWN_REP) {
+      this._spawnRoadblock();
+    }
+
+    // Roadblock proximity behavior: warn or attack
+    if (this._roadblockActive && playerPos) {
+      const poi = FACTION_POIS.find(p => p.id === ROADBLOCK_POI_ID);
+      if (!poi) return;
+      const dx = playerPos.x - poi.position.x;
+      const dz = playerPos.z - poi.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < ROADBLOCK_WARN_DIST) {
+        if (rep <= ROADBLOCK_ATTACK_REP) {
+          // Attack immediately
+          for (const u of this._roadblockUnits) {
+            if (u.userData.hp > 0 && u.userData.state !== "engage") {
+              u.userData.state = "engage";
+              u.userData._targetRef = { userData: { isPlayer: true, hp: 1 } };
+              u.userData.targetId = "__player__";
+            }
+          }
+        } else if (!this._roadblockWarned) {
+          // Warn once — units remain in patrol but player is notified
+          this._roadblockWarned = true;
+          // Emit a warning flag the game can read
+          this.questSys.setFlag("roadblock_warned", true);
+        }
+      } else {
+        // Reset warn flag when player leaves warn radius
+        this._roadblockWarned = false;
+      }
+    }
+  }
+
+  _spawnRoadblock() {
+    if (this._roadblockActive) return;
+    const poi = FACTION_POIS.find(p => p.id === ROADBLOCK_POI_ID);
+    if (!poi) return;
+
+    ensureMaterials();
+    ensureGeometries();
+    ensureBarricadeMaterial();
+
+    this._roadblockActive = true;
+    this._roadblockWarned = false;
+
+    // ---- Barricade meshes (simple boxes) ----
+    const bg = new THREE.Group();
+    const offsets = [
+      { x: -3, z: 0 },
+      { x:  3, z: 0 },
+      { x:  0, z: 2.5 },
+    ];
+    for (const off of offsets) {
+      const mesh = new THREE.Mesh(_barricadeGeom, _matBarricade);
+      mesh.position.set(poi.position.x + off.x, 0.6, poi.position.z + off.z);
+      mesh.castShadow = true;
+      bg.add(mesh);
+    }
+    this.group.add(bg);
+    this._roadblockGroup = bg;
+
+    // ---- Checkpoint squad ----
+    const squadId = `sq_roadblock`;
+    for (let i = 0; i < ROADBLOCK_SQUAD_SIZE; i++) {
+      const role = i === 0 ? "rifle" : "melee";
+      const unit = makeFactionUnit(FACTIONS.WARDENS, role, squadId, "__roadblock__");
+
+      const angle = (i / ROADBLOCK_SQUAD_SIZE) * Math.PI * 2;
+      const ux = poi.position.x + Math.cos(angle) * 4;
+      const uz = poi.position.z + Math.sin(angle) * 4;
+      unit.position.set(ux, 0, uz);
+      unit.userData.patrolOrigin = new THREE.Vector3(ux, 0, uz);
+      unit.userData.patrolAngle = angle;
+      unit.userData.patrolRadius = 3;
+      unit.userData.roadblock = true;
+
+      this.group.add(unit);
+      this._roadblockUnits.push(unit);
+      this.allUnits.push(unit);
+    }
+  }
+
+  _removeRoadblock() {
+    if (!this._roadblockActive) return;
+
+    // Remove barricade meshes
+    if (this._roadblockGroup) {
+      this.group.remove(this._roadblockGroup);
+      this._roadblockGroup = null;
+    }
+
+    // Remove roadblock squad units
+    for (const u of this._roadblockUnits) {
+      this.group.remove(u);
+      const idx = this.allUnits.indexOf(u);
+      if (idx >= 0) this.allUnits.splice(idx, 1);
+    }
+    this._roadblockUnits = [];
+    this._roadblockActive = false;
+    this._roadblockWarned = false;
+    this.questSys.setFlag("roadblock_warned", false);
   }
 
   // ---- AI states ----
@@ -505,6 +649,7 @@ export class FactionWorld {
     return {
       poiOwnership: { ...this.poiOwnership },
       resolvedSkirmishes: [...this.resolvedSkirmishes],
+      roadblockActive: this._roadblockActive,
     };
   }
 
@@ -520,6 +665,13 @@ export class FactionWorld {
     if (data.resolvedSkirmishes) {
       this.resolvedSkirmishes = new Set(data.resolvedSkirmishes);
     }
+    // Restore roadblock — actual spawn happens in next update via rep check
+    if (data.roadblockActive) {
+      // Don't spawn here directly; _updateRoadblock will re-create
+      // if rep still qualifies on the next update tick.
+    }
+    // Clear stale roadblock when loading (meshes are recreated dynamically)
+    this._removeRoadblock();
   }
 
   // ---- Debug ----
@@ -529,9 +681,10 @@ export class FactionWorld {
     console.log("Active units:", this.allUnits.length);
     console.log("Tile data entries:", this.tileData.size);
     console.log("POI ownership:", JSON.stringify(this.poiOwnership));
+    console.log("Roadblock active:", this._roadblockActive, "units:", this._roadblockUnits.length);
     for (const u of this.allUnits) {
       const ud = u.userData;
-      console.log(`  [${ud.faction}] ${ud.name} HP:${ud.hp}/${ud.hpMax} state:${ud.state} pos:(${u.position.x.toFixed(1)},${u.position.z.toFixed(1)})`);
+      console.log(`  [${ud.faction}] ${ud.name} HP:${ud.hp}/${ud.hpMax} state:${ud.state} pos:(${u.position.x.toFixed(1)},${u.position.z.toFixed(1)})${ud.roadblock?" [ROADBLOCK]":""}`);
     }
     console.log("===========================");
   }

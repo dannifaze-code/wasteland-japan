@@ -3273,6 +3273,12 @@ class Game{
       this.factionWorld.setVisible(true);
       const loadedKeys=new Set(this.world.tiles.keys());
       this.factionWorld.update(dt, this.player.pos, loadedKeys, this.useHeightmap?this.terrain:null);
+      // Roadblock warning toast
+      if(this.questSys.getFlag("roadblock_warned") && !this._roadblockToastShown){
+        this._roadblockToastShown=true;
+        this.ui.showToast("Warden Roadblock: \"Halt! You are not welcome here.\"",3.5);
+      }
+      if(!this.questSys.getFlag("roadblock_warned")){ this._roadblockToastShown=false; }
       // Decay faction heat slowly over time
       this.questSys.decayHeat(dt);
       // Biome-based fog density

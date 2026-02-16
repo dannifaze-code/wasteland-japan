@@ -1,0 +1,119 @@
+{
+  "title": "Wasteland Japan — Vault 811: Act 1 Story Bible",
+  "premise": "Vault 811 was sold as a refuge until Japan recovered from nuclear devastation. The truth: Japan never recovered. The Vault Directorate uses the lie of 'Surface Clearance Protocol' to maintain control. The player is among the first permitted outside and discovers the deception firsthand.",
+  "factions": {
+    "vault_directorate": {
+      "name": "Vault Directorate",
+      "desc": "Internal power bloc running Vault 811. Maintains order through information control. Believes safety requires obedience — or at least the appearance of it.",
+      "values": "Order, secrecy, institutional survival",
+      "leader": "Overseer Tanaka"
+    },
+    "shrine_wardens": {
+      "name": "Shrine Wardens",
+      "desc": "Wasteland faction that protects old sacred sites — torii gates, shrines, temples. Anti-technology, suspicious of vault dwellers. Believe radiation is spiritual corruption.",
+      "values": "Tradition, purity, sacred ground",
+      "leader": "Unknown elder (Act 2)"
+    },
+    "rail_ghost_union": {
+      "name": "Rail Ghost Union",
+      "desc": "Salvagers and traders living in collapsed rail tunnels and derailed train carts. Pragmatic survivors who trade information and scrap. Neither hostile nor friendly by default.",
+      "values": "Freedom, trade, survival",
+      "leader": "Signal Mother Aiko (hinted Act 1, appears Act 2)"
+    }
+  },
+  "characters": {
+    "overseer_tanaka": {
+      "name": "Overseer Tanaka",
+      "role": "Vault leader, Q1 quest-giver",
+      "faction": "Vault Directorate",
+      "personality": "Authoritative, paternalistic, hiding fear behind protocol. Genuinely believes the lie protects people.",
+      "arc": "Trust or betray the player depending on their choices"
+    },
+    "medic_yuki": {
+      "name": "Medic Yuki",
+      "role": "Vault medic, vendor, Q2 quest-giver",
+      "faction": "Vault Directorate (loosely)",
+      "personality": "Compassionate pragmatist. Cares about lives, not politics. Quietly troubled by supply shortages.",
+      "arc": "Ally if helped; disappointed if exploited"
+    },
+    "guard_kenji": {
+      "name": "Guard Kenji",
+      "role": "Vault door guard, Q3 quest-giver",
+      "faction": "Vault Directorate",
+      "personality": "Loyal soldier with growing doubts. Hears radio signals he can't explain. Wants someone he trusts to investigate.",
+      "arc": "Loyalty tested by what the player reveals"
+    },
+    "scavenger_rin": {
+      "name": "Scavenger Rin",
+      "role": "Outside drifter sheltering in vault, lore source",
+      "faction": "Drifters (unaligned)",
+      "personality": "Quiet, observant, knows more than she lets on. Has contacts outside. May have Rail Ghost connections.",
+      "arc": "Trust-gated: reveals vault secrets if player earns it"
+    },
+    "rail_ghost_contact": {
+      "name": "Rail Ghost Contact (Act 2 NPC, referenced in Act 1)",
+      "role": "Rail Ghost Union messenger",
+      "faction": "Rail Ghost Union",
+      "personality": "Cautious trader, speaks in code phrases"
+    },
+    "warden_sentinel": {
+      "name": "Warden Sentinel (Act 2 NPC, referenced in Act 1)",
+      "role": "Shrine Wardens perimeter guard",
+      "faction": "Shrine Wardens",
+      "personality": "Silent, intimidating, judges by action not words"
+    }
+  },
+  "act1_themes": [
+    "Truth vs Safety — Is it better to know the world is ruined, or live in the vault's comforting lie?",
+    "Loyalty vs Freedom — Obey the Directorate or forge your own path?",
+    "Survival vs Humanity — Hoard resources or share them? Exploit or cooperate?"
+  ],
+  "quests": {
+    "q1_permission_lie": {
+      "id": "q1_permission_lie",
+      "name": "The Permission Lie",
+      "summary": "Tanaka claims surface access requires 'clearance protocol'. Player can obey or investigate the truth.",
+      "stages": {
+        "0": "Not started",
+        "10": "Tanaka assigned surface clearance task",
+        "20": "Investigating vault logs (branch: pried into truth via Rin)",
+        "30": "Completed — loyal path (accepted protocol)",
+        "31": "Completed — rebel path (discovered the lie)"
+      }
+    },
+    "q2_medicine_outside": {
+      "id": "q2_medicine_outside",
+      "name": "Medicine for the Outside",
+      "summary": "Yuki needs scrap and cloth to craft Rad-Away for people outside. Player can deliver or keep supplies.",
+      "stages": {
+        "0": "Not started",
+        "10": "Yuki asked for supplies (3 scrap + 2 cloth)",
+        "20": "Supplies delivered to Yuki",
+        "30": "Completed — helped Yuki",
+        "31": "Completed — kept supplies (sold/refused)"
+      }
+    },
+    "q3_rail_whisper": {
+      "id": "q3_rail_whisper",
+      "name": "Rail Whisper",
+      "summary": "Kenji detected radio pings from a collapsed rail station. Player investigates and decides who to tell.",
+      "stages": {
+        "0": "Not started",
+        "10": "Kenji reported radio pings",
+        "20": "Player agreed to investigate rail signals",
+        "30": "Completed — reported truth to Kenji",
+        "31": "Completed — kept secret / sided with Rail Ghosts"
+      }
+    },
+    "q4_shrine_warning": {
+      "id": "q4_shrine_warning",
+      "name": "Shrine Warden Warning",
+      "summary": "Reaching a torii gate triggers a warning from the Shrine Wardens. A proximity-based mini quest.",
+      "stages": {
+        "0": "Not started",
+        "10": "Reached a torii gate — Shrine Wardens are watching",
+        "20": "Completed — acknowledged the warning"
+      }
+    }
+  }
+}

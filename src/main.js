@@ -6,6 +6,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.m
 import { NPCManager } from "./npc.js";
 import { DialogueController } from "./dialogue.js";
 import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
+import { Quest } from "./quest.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -301,7 +302,7 @@ function defaultSave(){
       radiation:0,armor:0,xp:0,level:1,skillPoints:0,
       skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
     },
-    world:{seed:811, quest:{step:0,log:["Leave Vault 811"]}}
+    world:{seed:811, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}}
   };
 }
 function loadSave(){
@@ -310,7 +311,7 @@ function loadSave(){
     if(!raw) return defaultSave();
     const s=JSON.parse(raw);
     const d=defaultSave();
-    return {...d,...s, player:{...d.player,...s.player}, world:{...d.world,...s.world, quest:{...d.world.quest,...(s.world?.quest||{})}}};
+    return {...d,...s, player:{...d.player,...s.player}, world:{...d.world,...s.world, quest:{...d.world.quest,...(s.world?.quest||{})}, questSys:{...d.world.questSys,...(s.world?.questSys||{})}}};
   }catch{ return defaultSave(); }
 }
 function writeSave(save){ localStorage.setItem(SAVE_KEY, JSON.stringify({...save,hasSave:true})); }
@@ -330,6 +331,7 @@ const ItemDB={
   plating:{id:"plating",name:"Scrap Plating",type:"armor",weight:5.0,desc:"+20 Armor."},
   scope:{id:"scope",name:"Improvised Scope",type:"mod",weight:0.4,desc:"Reduces spread."},
   extmag:{id:"extmag",name:"Extended Magazine",type:"mod",weight:0.6,desc:"+50% mag size."},
+  vaultKeycard:{id:"vaultKeycard",name:"Vault Keycard",type:"quest",weight:0.1,desc:"Restricted access card for Vault 811."},
 };
 function invWeight(inv){
   let w=0; for(const it of inv){ const d=ItemDB[it.id]; if(d) w+=d.weight*(it.qty||1); }
@@ -1371,6 +1373,8 @@ class Game{
     this.pipboyTab="stat";
 
     this.quest=this.save.world.quest;
+    this.questSys=new Quest();
+    this.questSys.fromSave(this.save.world.questSys);
 
     this.cutscene={
       step:0,t:0,hold:0,
@@ -1744,6 +1748,8 @@ class Game{
     this.player=new Player(this.camera);
     this.scene.add(this.player.model);
     this.quest=this.save.world.quest;
+    this.questSys=new Quest();
+    this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(true);
     // Reset vault door
     this.vault.door.rotation.y=0;
@@ -1759,6 +1765,8 @@ class Game{
     this.save=loadSave();
     this.player.fromSave(this.save.player);
     this.quest=this.save.world.quest;
+    this.questSys=new Quest();
+    this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.resume();
@@ -1793,6 +1801,7 @@ class Game{
   doSave(){
     this.save.player=this.player.toSave();
     this.save.world.quest=this.quest;
+    this.save.world.questSys=this.questSys.toSave();
     this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
@@ -1803,6 +1812,8 @@ class Game{
     if(!this.save.hasSave){ this.ui.showToast("No save to load."); return; }
     this.player.fromSave(this.save.player);
     this.quest=this.save.world.quest;
+    this.questSys=new Quest();
+    this.questSys.fromSave(this.save.world.questSys);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
@@ -2185,7 +2196,7 @@ class Game{
   }
 
   startDialogue(npcId, npcData){
-    const node=this.dialogueCtrl.start(npcId);
+    const node=this.dialogueCtrl.start(npcId, this.player, this);
     if(!node){ this.ui.showToast("..."); return; }
     this.mode="dialogue";
     this._dialogueNpcData=npcData;
@@ -2194,7 +2205,7 @@ class Game{
     if(npcMesh) npcMesh.userData._inDialogue=true;
     this.ui.hint.style.display="none";
     this.audio.click();
-    renderDialogueNode(this.ui.dlg, node, npcData, this.player, (idx)=>this._onDialogueChoice(idx));
+    renderDialogueNode(this.ui.dlg, node, npcData, this.player, (idx)=>this._onDialogueChoice(idx), this);
   }
 
   _onDialogueChoice(idx){
@@ -2203,14 +2214,14 @@ class Game{
     if(idx<0||idx>=choices.length) return;
     // Skip disabled (failed condition) choices
     const choice=choices[idx];
-    if(choice.condition && !choice.condition(this.player)) return;
+    if(choice.condition && !choice.condition(this.player, this)) return;
     const next=this.dialogueCtrl.pick(idx, this.player, this);
     if(!next){
       this.closeDialogue();
       return;
     }
     this.audio.click();
-    renderDialogueNode(this.ui.dlg, next, this._dialogueNpcData, this.player, (i)=>this._onDialogueChoice(i));
+    renderDialogueNode(this.ui.dlg, next, this._dialogueNpcData, this.player, (i)=>this._onDialogueChoice(i), this);
   }
 
   closeDialogue(){
@@ -2235,6 +2246,12 @@ class Game{
       this.quest.step=1;
       this.quest.log=["Find supplies","Reach the first shrine outpost"];
       this.ui.showToast("Objective updated.");
+    }
+    // Trigger firstExit flag for quest system
+    if(!this.questSys.getFlag("firstExit")){
+      this.questSys.setFlag("firstExit", true);
+      this.questSys.addObjective("Find the first shrine outpost");
+      this.questSys.addLog("Left Vault 811 for the first time. The wasteland awaits.");
     }
     // Animated vault door opening
     this.audio.tone(80,0.5,"sawtooth",0.15);
@@ -2428,7 +2445,9 @@ class Game{
     const deg=Math.round(yaw*180/Math.PI);
     this.ui.comp.textContent=`Heading: ${deg}°  •  ${p.inVault?"Vault 811":"Wasteland"}`;
 
-    this.ui.obj.textContent=this.quest?.log?.length?`Objective: ${this.quest.log[0]}`:"";
+    // Quest objectives: prefer new questSys, fall back to legacy quest.log for backward compat
+    const qObj=this.questSys.topObjective();
+    this.ui.obj.textContent=qObj?`Objective: ${qObj}`:(this.quest?.log?.length?`Objective: ${this.quest.log[0]}`:"");
 
     // Radiation warning flash
     if(p.radiation>60){
@@ -2563,6 +2582,60 @@ class Game{
       const fog=this.world.fogForBiome(biome);
       this.scene.fog.near=lerp(this.scene.fog.near,fog.near,2*dt);
       this.scene.fog.far=lerp(this.scene.fog.far,fog.far,2*dt);
+
+      // World trigger: torii proximity (Q4 Shrine Warden Warning)
+      const TORII_TRIGGER_RADIUS=30;
+      if(!this.questSys.getFlag("reachedTorii")){
+        this._toriiCheckTimer=(this._toriiCheckTimer||0)+dt;
+        if(this._toriiCheckTimer>2.0){ // check every 2 seconds, not every frame
+          this._toriiCheckTimer=0;
+          const pp=this.player.pos;
+          for(const [,tile] of this.world.tiles){
+            tile.g.traverse(child=>{
+              if(child.userData?.poi==="Silent Torii" && !this.questSys.getFlag("reachedTorii")){
+                const wp=new THREE.Vector3();
+                child.getWorldPosition(wp);
+                const dx=pp.x-wp.x, dz=pp.z-wp.z;
+                if(dx*dx+dz*dz<TORII_TRIGGER_RADIUS*TORII_TRIGGER_RADIUS){
+                  this.questSys.setFlag("reachedTorii",true);
+                  this.questSys.addObjective("Heed the Shrine Warden warning");
+                  this.questSys.addLog("Reached a torii gate. The Shrine Wardens are watching.");
+                  this.questSys.setStage("q4_shrine_warning",10);
+                  this.questSys.changeRep("wardens",-5);
+                  this.ui.showToast("The air feels heavy near the torii. You are being watched.",3.0);
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // World trigger: rail station proximity (for Q3)
+      const RAIL_TRIGGER_RADIUS=35;
+      if(this.questSys.getStage("q3_rail_whisper")>=10 && !this.questSys.getFlag("reachedRailStation")){
+        this._railCheckTimer=(this._railCheckTimer||0)+dt;
+        if(this._railCheckTimer>2.0){
+          this._railCheckTimer=0;
+          const pp=this.player.pos;
+          for(const [,tile] of this.world.tiles){
+            tile.g.traverse(child=>{
+              if((child.userData?.poi==="Collapsed Rail Station"||child.userData?.poi==="Destroyed Railway") && !this.questSys.getFlag("reachedRailStation")){
+                const wp=new THREE.Vector3();
+                child.getWorldPosition(wp);
+                const dx=pp.x-wp.x, dz=pp.z-wp.z;
+                if(dx*dx+dz*dz<RAIL_TRIGGER_RADIUS*RAIL_TRIGGER_RADIUS){
+                  this.questSys.setFlag("reachedRailStation",true);
+                  this.questSys.completeObjective("Investigate radio signals near the rail stations");
+                  this.questSys.addObjective("Report findings to Guard Kenji");
+                  this.questSys.addLog("Reached a rail station. Faint coded radio pings detected — the Rail Ghost Union is here.");
+                  this.questSys.setStage("q3_rail_whisper",20);
+                  this.ui.showToast("Radio static crackles. Coded pings echo in the tunnels. Someone is out here.",3.0);
+                }
+              }
+            });
+          }
+        }
+      }
     }
 
     // Vault door animation

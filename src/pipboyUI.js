@@ -285,6 +285,12 @@ function _renderStats(c, game, deps) {
   c.innerHTML = html;
 }
 
+function _repBarStyle(rep) {
+  const pct = ((rep + 100) / 200) * 100;
+  if (rep >= 0) return `left:50%;width:${(rep / 200) * 100}%`;
+  return `left:${pct}%;width:${50 - pct}%`;
+}
+
 function _renderFactions(c, game) {
   const qs = game.questSys;
   let html = `<div class="section-title">Faction Reputation</div>`;
@@ -292,7 +298,6 @@ function _renderFactions(c, game) {
   for (const [factionKey, info] of Object.entries(FACTION_INFO)) {
     const rep = qs.getRep(factionKey);
     const mult = qs.vendorMultiplier(factionKey);
-    const pct = ((rep + 100) / 200) * 100; // 0-100% position on bar
 
     let repLabel = "Neutral";
     if (rep >= 50) repLabel = "Allied";
@@ -307,12 +312,13 @@ function _renderFactions(c, game) {
         <span style="font-size:11px;opacity:.5;min-width:30px">-100</span>
         <div class="rep-bar">
           <div class="rep-marker" style="left:50%"></div>
-          <div class="rep-fill" style="left:50%;width:${rep >= 0 ? (rep / 200) * 100 : 0}%;${rep < 0 ? `left:${pct}%;width:${(50 - pct)}%` : ""}"></div>
+          <div class="rep-fill" style="${_repBarStyle(rep)}"></div>
         </div>
         <span style="font-size:11px;opacity:.5;min-width:30px">+100</span>
       </div>
       <div class="stat-line" style="font-size:12px">Rep: ${rep} (${repLabel}) \u2022 Vendor prices: x${mult.toFixed(1)}</div>
     </div>`;
+  }
   }
 
   c.innerHTML = html;

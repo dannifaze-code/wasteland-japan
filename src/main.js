@@ -1586,7 +1586,7 @@ class Game{
 
     const kb=document.createElement("div");
     kb.style.marginTop="8px"; kb.style.opacity="0.85";
-    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • Tab/P Pip-Boy (I Inv, K Stats, J Factions) • Esc Pause</div>`;
+    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons (1-5 tabs in Pip-Boy) • R Reload • E Interact • Tab/P Pip-Boy (I Inv, K Stats, J Factions) • Esc Pause</div>`;
     wrap.appendChild(kb);
 
     this.ui.btns.innerHTML="";

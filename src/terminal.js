@@ -35,7 +35,7 @@ export const TerminalDefs = {
       { title: "ENTRY 004 — ARMORY NOTE", body: "Armory locker combination reset. Standard security lock (Average difficulty) applied. Contact security chief for access override." }
     ],
     actions: [
-      { label: "[Unlock Armory Locker]", kind: "unlock", targetLockId: "armory_locker", doneFlag: "unlocked:armory_locker" },
+      { label: "[Unlock Armory Locker]", kind: "unlock", targetLockId: "armory_locker", displayName: "Armory Locker", doneFlag: "unlocked:armory_locker" },
     ]
   }
 };

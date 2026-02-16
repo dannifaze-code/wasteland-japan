@@ -2288,13 +2288,20 @@ class Game{
     const def=TerminalDefs[terminalId];
     if(!def){ this.ui.showToast("Terminal offline."); return; }
     this.mode="terminal";
+    this._activeTerminalId=terminalId;
     this.ui.hint.style.display="none";
+    this._renderActiveTerminal();
+    this.audio.click();
+  }
+
+  _renderActiveTerminal(){
+    const def=TerminalDefs[this._activeTerminalId];
+    if(!def) return;
     renderTerminal(this.ui.term, def, this.questSys, {
       onClose: ()=>this.closeTerminalUI(),
       onAction: (act)=>this._terminalAction(act),
       showToast: (msg)=>this.ui.showToast(msg)
     });
-    this.audio.click();
   }
 
   _terminalAction(act){
@@ -2305,28 +2312,16 @@ class Game{
         return;
       }
       this.questSys.setFlag(flagKey, true);
-      this.ui.showToast(`Remote unlock: ${act.targetLockId.replace(/_/g," ")}.`);
+      this.ui.showToast(`Remote unlock: ${act.displayName || act.targetLockId}.`);
       this.audio.hit();
       // Re-render terminal to update button states
-      const def=TerminalDefs[this._currentTerminalId()] || null;
-      if(def) renderTerminal(this.ui.term, def, this.questSys, {
-        onClose: ()=>this.closeTerminalUI(),
-        onAction: (a)=>this._terminalAction(a),
-        showToast: (msg)=>this.ui.showToast(msg)
-      });
+      this._renderActiveTerminal();
     }
-  }
-
-  _currentTerminalId(){
-    // Read from the title text to identify the current terminal
-    for(const [id,def] of Object.entries(TerminalDefs)){
-      if(this.ui.term.titleEl.textContent===def.title) return id;
-    }
-    return null;
   }
 
   closeTerminalUI(){
     closeTerminal(this.ui.term);
+    this._activeTerminalId=null;
     this.mode="play";
   }
 

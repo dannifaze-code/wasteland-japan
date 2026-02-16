@@ -1,0 +1,110 @@
+{
+  "map": {
+    "id": "kuroshima_act1",
+    "size": 900,
+    "heightmap": "heightmap_kuroshima_1024.png",
+    "minimap": "minimap_kuroshima_1024.png"
+  },
+  "pois": [
+    {
+      "id": "vault_811",
+      "name": "Vault 811",
+      "type": "vault",
+      "world": {
+        "x": 7.478005865102633,
+        "z": 165.83577712609966
+      },
+      "notes": "Start safe. Exits toward the shrine route."
+    },
+    {
+      "id": "torii_gate_01",
+      "name": "Silent Torii",
+      "type": "torii",
+      "world": {
+        "x": 25.07331378299118,
+        "z": 64.6627565982405
+      },
+      "notes": "First reveal beat + Q4 trigger."
+    },
+    {
+      "id": "shrine_outpost",
+      "name": "Shrine Outpost",
+      "type": "outpost",
+      "world": {
+        "x": 38.26979472140759,
+        "z": 7.478005865102633
+      },
+      "notes": "Safe hub loop: rest/save/vendors/notice board."
+    },
+    {
+      "id": "rail_station_01",
+      "name": "Collapsed Rail Station",
+      "type": "rail",
+      "world": {
+        "x": -49.706744868035194,
+        "z": -45.30791788856306
+      },
+      "notes": "Mid-act contact beat + terminal/lock clues."
+    },
+    {
+      "id": "coastal_works_01",
+      "name": "Coastal Works",
+      "type": "industrial",
+      "world": {
+        "x": 165.83577712609966,
+        "z": 42.668621700879726
+      },
+      "notes": "Radiation pocket + late-act loot zone."
+    },
+    {
+      "id": "metro_block_01",
+      "name": "Ruined Metro Block",
+      "type": "poi",
+      "world": {
+        "x": -80.49853372434015,
+        "z": 271.40762463343106
+      },
+      "notes": ""
+    },
+    {
+      "id": "forest_ruins_01",
+      "name": "Overgrown Hamlet",
+      "type": "poi",
+      "world": {
+        "x": 86.6568914956012,
+        "z": -80.49853372434015
+      },
+      "notes": ""
+    },
+    {
+      "id": "ridge_watch_01",
+      "name": "Ridge Watch",
+      "type": "poi",
+      "world": {
+        "x": 42.668621700879726,
+        "z": -194.8680351906158
+      },
+      "notes": ""
+    },
+    {
+      "id": "maintenance_hatch",
+      "name": "Maintenance Hatch",
+      "type": "dungeonDoor",
+      "world": {
+        "x": -1.319648093841641,
+        "z": 143.84164222873898
+      },
+      "notes": "Dungeon door (lockpick-gated) to Maintenance Tunnel interior."
+    },
+    {
+      "id": "rail_service_hatch",
+      "name": "Rail Service Hatch",
+      "type": "dungeonDoor",
+      "world": {
+        "x": -36.51026392961879,
+        "z": -49.706744868035194
+      },
+      "notes": "Dungeon door (terminal-gated) to Rail Service Room interior."
+    }
+  ]
+}

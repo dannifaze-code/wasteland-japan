@@ -113,6 +113,10 @@ export class Worldspace {
         this._placeIronShack(poi, x, y, z);
         break;
 
+      case "road_sign":
+        this._placeRoadSign(poi, x, y, z);
+        break;
+
       case "poi":
       default:
         this._placeGenericPOI(poi, x, y, z);
@@ -240,6 +244,157 @@ export class Worldspace {
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     this.poiGroup.add(g);
     this._addDebugMarker(poi, x, y, z, 0x8b6914);
+  }
+
+  /**
+   * Places a weathered Japanese road sign — post-nuclear wasteland style.
+   * Signs are procedurally generated with rust, tilt, and damage details
+   * to maintain the Fallout / New Vegas apocalyptic aesthetic.
+   */
+  _placeRoadSign(poi, x, y, z) {
+    const g = new THREE.Group();
+    const tiltDeg = poi.tilt || 0;
+    const variant = poi.signVariant || "caution";
+
+    // Wasteland-weathered materials
+    const matPoleRust = new THREE.MeshStandardMaterial({
+      color: 0x4a3828, roughness: 0.95, metalness: 0.2
+    });
+    const matSignFace = new THREE.MeshStandardMaterial({
+      color: this._signFaceColor(variant),
+      roughness: 0.85,
+      metalness: 0.1
+    });
+    const matSignBack = new THREE.MeshStandardMaterial({
+      color: 0x3a332a, roughness: 0.95, metalness: 0.15
+    });
+
+    // Rusted pole
+    const poleHeight = variant === "guide_board" ? 4.5 : 3.0;
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.08, poleHeight, 6),
+      matPoleRust
+    );
+    pole.position.y = poleHeight / 2;
+    pole.castShadow = true;
+    g.add(pole);
+
+    // Sign face — shape varies by variant
+    const signMesh = this._buildSignFace(variant, matSignFace, matSignBack);
+    signMesh.position.y = poleHeight - 0.2;
+    signMesh.castShadow = true;
+    g.add(signMesh);
+
+    // Weathering detail: small rust chunk at base
+    const debris = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.15, 0.2),
+      matPoleRust
+    );
+    debris.position.set(0.15, 0.08, 0.1);
+    debris.rotation.y = 0.7;
+    g.add(debris);
+
+    // Apply post-apocalyptic tilt (blast damage / ground settling)
+    const tiltRad = (tiltDeg * Math.PI) / 180;
+    g.rotation.z = tiltRad;
+    // Random rotation around Y for variety
+    g.rotation.y = (poi.world.x * 7 + poi.world.z * 13) % (Math.PI * 2);
+
+    g.position.set(x, y, z);
+    g.userData.poi = poi.name;
+    g.userData.signVariant = variant;
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    this.poiGroup.add(g);
+    this._addDebugMarker(poi, x, y, z, 0xccaa44);
+  }
+
+  /** Returns a weathered/faded color for the sign face based on variant. */
+  _signFaceColor(variant) {
+    const colors = {
+      stop: 0x6b2020,        // faded red
+      no_entry: 0x7a2828,    // dark faded red
+      slow_down: 0x8a7a30,   // yellowed
+      speed_limit: 0x8888a0, // faded white-blue
+      caution: 0x8a7a20,     // scorched yellow
+      dead_end: 0x4a5a8a,    // faded blue
+      direction: 0x3a6a3a,   // faded green
+      railroad: 0x8a8a40,    // faded yellow
+      yield: 0x7a3030,       // faded red-orange
+      guide_board: 0x2a5a3a, // dark faded green
+    };
+    return colors[variant] || 0x6a6a5a;
+  }
+
+  /** Builds the sign face mesh appropriate for the variant. */
+  _buildSignFace(variant, matFront, matBack) {
+    const signGroup = new THREE.Group();
+    let geometry;
+
+    switch (variant) {
+      case "stop": {
+        // Octagonal stop sign
+        const shape = new THREE.Shape();
+        const r = 0.45;
+        for (let i = 0; i < 8; i++) {
+          const a = (Math.PI / 8) + (i * Math.PI) / 4;
+          const px = Math.cos(a) * r;
+          const py = Math.sin(a) * r;
+          if (i === 0) shape.moveTo(px, py);
+          else shape.lineTo(px, py);
+        }
+        shape.closePath();
+        geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false });
+        break;
+      }
+      case "caution":
+      case "yield": {
+        // Triangle sign
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0.5);
+        shape.lineTo(-0.45, -0.25);
+        shape.lineTo(0.45, -0.25);
+        shape.closePath();
+        geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false });
+        break;
+      }
+      case "guide_board": {
+        // Large rectangular board
+        geometry = new THREE.BoxGeometry(2.0, 0.8, 0.05);
+        break;
+      }
+      case "speed_limit":
+      case "no_entry":
+      case "railroad": {
+        // Circular sign
+        geometry = new THREE.CylinderGeometry(0.4, 0.4, 0.03, 16);
+        const mesh = new THREE.Mesh(geometry, matFront);
+        mesh.rotation.x = Math.PI / 2;
+        signGroup.add(mesh);
+        return signGroup;
+      }
+      default: {
+        // Standard rectangular sign
+        geometry = new THREE.BoxGeometry(0.7, 0.7, 0.03);
+        break;
+      }
+    }
+
+    const front = new THREE.Mesh(geometry, matFront);
+    signGroup.add(front);
+
+    // Back plate (slightly larger, darker)
+    const backPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        variant === "guide_board" ? 2.05 : 0.75,
+        variant === "guide_board" ? 0.85 : 0.75,
+        0.02
+      ),
+      matBack
+    );
+    backPlate.position.z = -0.025;
+    signGroup.add(backPlate);
+
+    return signGroup;
   }
 
   _placeGenericPOI(poi, x, y, z) {

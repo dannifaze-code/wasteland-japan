@@ -10,6 +10,7 @@ import { Quest } from "./quest.js";
 import { attemptLockpick, isUnlocked, lockHintLabel } from "./locks.js";
 import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTerminal } from "./terminal.js";
 import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
+import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -85,22 +86,7 @@ function makeUI(){
     .skill-desc{font-size:11px;opacity:.7}
     .skill-lvl{font-size:13px;opacity:.9}
     .craft-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(600px,90vw);max-height:75vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,18,.92);display:none;pointer-events:auto;padding:18px}
-    .pipboy-overlay{position:absolute;left:50%;top:58%;transform:translate(-50%,-50%);width:min(520px,80vw);max-height:60vh;overflow:auto;border-radius:10px;border:2px solid rgba(80,255,80,.45);background:rgba(5,18,5,.92);color:#33ff66;font-family:"Courier New",Courier,monospace;display:none;pointer-events:auto;padding:0;box-shadow:0 0 40px rgba(30,255,60,.15),inset 0 0 30px rgba(0,0,0,.5)}
-    .pipboy-overlay *{color:#33ff66}
-    .pipboy-tabs{display:flex;border-bottom:1px solid rgba(80,255,80,.3);background:rgba(0,0,0,.3)}
-    .pipboy-tab{flex:1;text-align:center;padding:10px 8px;cursor:pointer;pointer-events:auto;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;opacity:.6;border-bottom:2px solid transparent;transition:opacity .15s}
-    .pipboy-tab:hover{opacity:.85}
-    .pipboy-tab.active{opacity:1;border-bottom-color:#33ff66;background:rgba(50,255,80,.06)}
-    .pipboy-content{padding:14px 16px;min-height:200px}
-    .pipboy-content .k{color:#33ff66}
-    .pipboy-content .skill-row{border-bottom-color:rgba(80,255,80,.15)}
-    .pipboy-content .chip{border-color:rgba(80,255,80,.35);background:rgba(50,255,80,.08);color:#33ff66}
-    .pipboy-content .chip:hover{background:rgba(50,255,80,.18)}
-    .pipboy-content .inv-item{border-bottom-color:rgba(80,255,80,.1)}
-    .pipboy-content .inv-list{border-color:rgba(80,255,80,.2)}
-    .pipboy-content .panel{border-color:rgba(80,255,80,.2)}
-    .pipboy-content .actions .chip{color:#33ff66}
-    .pipboy-scanline{pointer-events:none;position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);border-radius:10px}
+    ${PIPBOY_CSS}
     ${DIALOGUE_CSS}
     ${TERMINAL_CSS}
   `;
@@ -155,13 +141,8 @@ function makeUI(){
   const skillTree=el("div","skill-tree",root);
   const craftPanel=el("div","craft-panel",root);
 
-  // Pip-Boy overlay
-  const pipboy=el("div","pipboy-overlay",root);
-  const pipTabs=el("div","pipboy-tabs",pipboy);
-  const tabNames=["STAT","INV","SKILLS","CRAFT"];
-  const pipTabBtns=tabNames.map(name=>{const t=el("div","pipboy-tab",pipTabs); t.textContent=name; t.dataset.tab=name.toLowerCase(); return t;});
-  const pipContent=el("div","pipboy-content",pipboy);
-  el("div","pipboy-scanline",pipboy);
+  // Pip-Boy overlay (built by pipboyUI module)
+  const pipUI=buildPipboyUI(root);
 
   const dlg=buildDialogueUI(root);
   const term=buildTerminalUI(root);
@@ -174,7 +155,7 @@ function makeUI(){
     showToast._t=setTimeout(()=>toast.classList.remove("on"), sec*1000);
   }
 
-  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent,dlg,term};
+  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipUI,dlg,term};
 }
 
 // ---------------- Audio (simple synth) ----------------
@@ -1390,7 +1371,7 @@ class Game{
     this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue
     this.autoFire=false;
     this.shake={amp:0,t:0};
-    this.pipboyTab="stat";
+    this.pipboyTab="journal";
 
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
@@ -1517,15 +1498,17 @@ class Game{
     this.ui.scrim.style.display="none";
     this.ui.inv.style.display="none";
     this.ui.cut.style.display="none";
-    this.ui.pipboy.style.display="none";
+    pipboyClose(this.ui.pipUI);
     this.ui.dlg.panel.style.display="none";
     this.player.pipboyActive=false;
   }
 
   openPipboy(tab){
+    // Block if in dialogue or terminal
+    if(this.mode==="dialogue"||this.mode==="terminal"){ this.ui.showToast("Busy"); return; }
     if(this.mode==="pipboy"&&this.pipboyTab===tab){ this.closePipboy(); return; }
     this.mode="pipboy";
-    this.pipboyTab=tab||"stat";
+    this.pipboyTab=tab||"journal";
     this.player.pipboyActive=true;
     // Force first-person when opening pip-boy
     if(this.player.camMode==="tp"){ this.player.camMode="fp"; }
@@ -1533,9 +1516,9 @@ class Game{
     this.ui.skillTree.style.display="none";
     this.ui.craftPanel.style.display="none";
     this.ui.scrim.style.display="none";
-    this.ui.pipboy.style.display="block";
+    pipboyOpen(this.ui.pipUI, tab);
     // Bind tab buttons once per open (onclick replaces, no leak)
-    this.ui.pipTabBtns.forEach(btn=>{
+    this.ui.pipUI.tabBtns.forEach(btn=>{
       btn.onclick=()=>{ this.pipboyTab=btn.dataset.tab; this.renderPipboy(); };
     });
     this.renderPipboy();
@@ -1543,138 +1526,18 @@ class Game{
 
   closePipboy(){
     this.player.pipboyActive=false;
-    this.ui.pipboy.style.display="none";
+    pipboyClose(this.ui.pipUI);
     this.mode="play";
   }
 
   renderPipboy(){
-    const tab=this.pipboyTab;
-    this.ui.pipTabBtns.forEach(btn=>{
-      btn.classList.toggle("active",btn.dataset.tab===tab);
-    });
-    const c=this.ui.pipContent;
-    c.innerHTML="";
-    if(tab==="stat") this._renderPipStat(c);
-    else if(tab==="inv") this._renderPipInv(c);
-    else if(tab==="skills") this._renderPipSkills(c);
-    else if(tab==="craft") this._renderPipCraft(c);
-  }
-
-  _renderPipStat(c){
-    const p=this.player;
-    c.innerHTML=`
-      <div style="font-weight:900;font-size:16px;margin-bottom:10px;letter-spacing:1px">STATUS</div>
-      <div class="k">HP: ${Math.round(p.hp)} / ${p.hpMax}</div>
-      <div class="k">Stamina: ${Math.round(p.stamina)} / ${p.staminaMax}</div>
-      <div class="k">Radiation: ${Math.round(p.radiation)} / ${p.radiationMax}</div>
-      <div class="k">Armor: ${p.armor}</div>
-      <div class="k">Level: ${p.level} (XP: ${p.xp}/${p.level*100})</div>
-      <div style="height:10px"></div>
-      <div style="font-weight:900;font-size:14px;margin-bottom:6px;letter-spacing:1px">AMMO</div>
-      <div class="k">Pistol: ${p.mag.pistol}/${p.reserve.pistol}</div>
-      <div class="k">Rifle: ${p.mag.rifle}/${p.reserve.rifle}</div>
-      <div class="k">Shotgun: ${p.mag.shotgun}/${p.reserve.shotgun}</div>
-      <div style="height:10px"></div>
-      <div style="font-weight:900;font-size:14px;margin-bottom:6px;letter-spacing:1px">CONTROLS</div>
-      <div class="k">Tab: Pip-Boy (I/K/J for tabs) • C: Camera • R: Reload</div>
-      <div class="k">E: Interact • Esc: Pause/Settings</div>
-    `;
-  }
-
-  _renderPipInv(c){
-    const p=this.player;
-    const w=p.weight();
-    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:4px;letter-spacing:1px">INVENTORY</div>`;
-    html+=`<div class="k" style="margin-bottom:10px">Weight: ${w.toFixed(1)}/${p.maxWeight} • Equipped: ${p.weapon.name} • Armor: ${p.armor}</div>`;
-    html+=`<div class="inv-list">`;
-    p.inv.forEach((item,idx)=>{
-      const def=ItemDB[item.id]||{name:item.id,type:"junk",weight:0,desc:""};
-      const useLabel=def.type==="consumable"?"Use":def.type==="weapon"?"Equip":def.type==="armor"?"Wear":def.type==="mod"?"Apply":"Inspect";
-      html+=`<div class="inv-item" style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid rgba(80,255,80,.1)">
-        <div><div style="font-weight:800">${def.name} <span class="k">x${item.qty||1}</span></div><div class="k" style="font-size:11px">${def.desc} • ${def.weight}wt</div></div>
-        <div style="display:flex;gap:6px">
-          <div class="chip" data-pipuse="${idx}">${useLabel}</div>
-          <div class="chip" data-pipdrop="${idx}">Drop</div>
-        </div>
-      </div>`;
-    });
-    html+=`</div>`;
-    c.innerHTML=html;
-    c.querySelectorAll("[data-pipuse]").forEach(btn=>{
-      btn.addEventListener("click",()=>{ this.useItem(parseInt(btn.dataset.pipuse,10)); this.renderPipboy(); });
-    });
-    c.querySelectorAll("[data-pipdrop]").forEach(btn=>{
-      btn.addEventListener("click",()=>{ this.dropItem(parseInt(btn.dataset.pipdrop,10)); this.renderPipboy(); });
-    });
-  }
-
-  _renderPipSkills(c){
-    const p=this.player;
-    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:4px;letter-spacing:1px">SKILLS</div>`;
-    html+=`<div class="k" style="margin-bottom:10px">Level ${p.level} • Skill Points: ${p.skillPoints}</div>`;
-    for(const [key,def] of Object.entries(SkillDefs)){
-      const lvl=p.skills[key]||0;
-      const canUpgrade=p.skillPoints>0 && lvl<def.maxLvl;
-      html+=`<div class="skill-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(80,255,80,.15)">
-        <div><div style="font-weight:800;font-size:14px">${def.name}</div><div class="k" style="font-size:11px">${def.desc}</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="k">${lvl}/${def.maxLvl}</span>
-          ${canUpgrade?`<div class="chip" data-pipskill="${key}">+</div>`:`<span class="k" style="opacity:.4">MAX</span>`}
-        </div>
-      </div>`;
-    }
-    c.innerHTML=html;
-    c.querySelectorAll("[data-pipskill]").forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        const sk=btn.dataset.pipskill;
-        if(p.skillPoints>0 && p.skills[sk]<SkillDefs[sk].maxLvl){
-          p.skills[sk]++;
-          p.skillPoints--;
-          if(sk==="toughness") p.hpMax=100+p.skills.toughness*15;
-          this.ui.showToast(`${SkillDefs[sk].name} upgraded to ${p.skills[sk]}`);
-          this.renderPipboy();
-        }
-      });
-    });
-  }
-
-  _renderPipCraft(c){
-    const p=this.player;
-    let html=`<div style="font-weight:900;font-size:16px;margin-bottom:10px;letter-spacing:1px">CRAFTING</div>`;
-    for(const recipe of CraftRecipes){
-      const canCraft=recipe.needs.every(n=>{
-        const have=p.inv.find(x=>x.id===n.id);
-        return have && (have.qty||1)>=n.qty;
-      });
-      const needsStr=recipe.needs.map(n=>`${ItemDB[n.id]?.name||n.id} x${n.qty}`).join(", ");
-      const resultDef=ItemDB[recipe.result.id];
-      html+=`<div class="skill-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(80,255,80,.15)">
-        <div><div style="font-weight:800;font-size:14px">${resultDef?.name||recipe.name}</div><div class="k" style="font-size:11px">Needs: ${needsStr}</div></div>
-        <div>${canCraft?`<div class="chip" data-pipcraft="${recipe.id}">Craft</div>`:`<span class="k" style="opacity:.4">Missing</span>`}</div>
-      </div>`;
-    }
-    c.innerHTML=html;
-    c.querySelectorAll("[data-pipcraft]").forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        const recipe=CraftRecipes.find(r=>r.id===btn.dataset.pipcraft);
-        if(!recipe) return;
-        const canCraft=recipe.needs.every(n=>{
-          const have=p.inv.find(x=>x.id===n.id);
-          return have && (have.qty||1)>=n.qty;
-        });
-        if(!canCraft){this.ui.showToast("Missing materials."); return;}
-        for(const n of recipe.needs){
-          const have=p.inv.find(x=>x.id===n.id);
-          have.qty=(have.qty||1)-n.qty;
-          if(have.qty<=0) p.inv.splice(p.inv.indexOf(have),1);
-        }
-        const existing=p.inv.find(x=>x.id===recipe.result.id);
-        if(existing) existing.qty=(existing.qty||1)+recipe.result.qty;
-        else p.inv.push({...recipe.result});
-        this.audio.hit();
-        this.ui.showToast(`Crafted: ${ItemDB[recipe.result.id]?.name||recipe.result.id}`);
-        this.renderPipboy();
-      });
+    pipboyRender(this.ui.pipUI, this.pipboyTab, this, {
+      ItemDB,
+      SkillDefs,
+      WeaponDefs,
+      useItem: (idx) => this.useItem(idx),
+      dropItem: (idx) => this.dropItem(idx),
+      renderCallback: () => this.renderPipboy(),
     });
   }
 
@@ -1723,7 +1586,7 @@ class Game{
 
     const kb=document.createElement("div");
     kb.style.marginTop="8px"; kb.style.opacity="0.85";
-    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons • R Reload • E Interact • Tab Pip-Boy (I Inv, K Skills, J Craft) • Esc Pause</div>`;
+    kb.innerHTML=`<div class="k">Keybinds: WASD Move • Mouse Look • C Camera • 1/2/3 Weapons (1-5 tabs in Pip-Boy) • R Reload • E Interact • Tab/P Pip-Boy (I Inv, K Stats, J Factions) • Esc Pause</div>`;
     wrap.appendChild(kb);
 
     this.ui.btns.innerHTML="";
@@ -2006,7 +1869,7 @@ class Game{
       <div class="k">Shotgun: ${this.player.mag.shotgun}/${this.player.reserve.shotgun}</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Controls</div>
-      <div class="k">• Tab: Pip-Boy (I/K/J for tabs) • C: camera</div>
+      <div class="k">• Tab/P: Pip-Boy (I Inv, K Stats, J Factions) • C: camera</div>
       <div class="k">• R: reload • E: interact • Esc: pause</div>
     `;
   }
@@ -2630,7 +2493,12 @@ class Game{
       else if(this.mode==="intro") this.endIntro();
     }
     if(this.input.pressed("Tab")){
-      if(this.mode==="play") this.openPipboy("stat");
+      if(this.mode==="play") this.openPipboy("journal");
+      else if(this.mode==="pipboy") this.closePipboy();
+      // dialogue/terminal: blocked by openPipboy guard
+    }
+    if(this.input.pressed("KeyP")){
+      if(this.mode==="play") this.openPipboy("journal");
       else if(this.mode==="pipboy") this.closePipboy();
     }
 
@@ -2645,8 +2513,8 @@ class Game{
       if(this.input.pressed("KeyR")) this.player.requestReload(this);
       if(this.input.pressed("KeyI")) this.openPipboy("inv");
       if(this.input.pressed("KeyE")) this.doInteract();
-      if(this.input.pressed("KeyK")) this.openPipboy("skills");
-      if(this.input.pressed("KeyJ")) this.openPipboy("craft");
+      if(this.input.pressed("KeyK")) this.openPipboy("stats");
+      if(this.input.pressed("KeyJ")) this.openPipboy("factions");
 
       if(this.autoFire && this.player.weapon.fireMode==="auto") this.player.tryFire(this);
     }
@@ -2656,6 +2524,18 @@ class Game{
       for(let i=1;i<=9;i++){
         if(this.input.pressed("Digit"+i)){
           this._onDialogueChoice(i-1);
+          break;
+        }
+      }
+    }
+
+    // Pip-Boy mode: number keys to switch tabs (1-5)
+    if(this.mode==="pipboy"){
+      const pipTabKeys=["journal","inv","stats","factions","settings"];
+      for(let i=0;i<5;i++){
+        if(this.input.pressed("Digit"+(i+1))){
+          this.pipboyTab=pipTabKeys[i];
+          this.renderPipboy();
           break;
         }
       }

@@ -12,6 +12,7 @@ import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTermi
 import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
 import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
 import { DungeonManager, DungeonDefs } from "./dungeon.js";
+import { CompanionManager, CompanionDefs } from "./companion.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -1491,6 +1492,10 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
 
+    // Companion system
+    this.companionMgr=new CompanionManager(this.scene);
+    if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
+
     this.cutscene={
       step:0,t:0,hold:0,
       lines:[
@@ -1807,6 +1812,7 @@ class Game{
     this.save.player=this.player.toSave();
     this.save.world.quest=this.quest;
     this.save.world.questSys=this.questSys.toSave();
+    this.save.world.companion=this.companionMgr.toSave();
     this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
@@ -1819,6 +1825,7 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
@@ -2296,6 +2303,7 @@ class Game{
       }else if(ud.kind==="restPoint"){
         this.player.hp=this.player.effectiveMaxHP();
         this.player.stamina=this.player.staminaMax;
+        if(this.companionMgr.active) this.companionMgr.revive();
         this.doSave();
         this.ui.showToast("Rested. Saved.",2.5);
         this.audio.click();
@@ -2587,9 +2595,30 @@ class Game{
         }
 
         if(ud.kind==="crawler"){
-          if(dist<1.6 && ud.atkCd<=0){ ud.atkCd=0.9; this.damagePlayer(ud.dmg); }
+          if(dist<1.6 && ud.atkCd<=0){
+            ud.atkCd=0.9;
+            // Sometimes attack companion if closer
+            if(this.companionMgr.isActive()){
+              const compPos=this.companionMgr.active.mesh.position;
+              const compDist=e.position.distanceTo(compPos);
+              if(compDist<dist && compDist<2.0){
+                const killed=this.companionMgr.damage(ud.dmg);
+                if(killed) this.ui.showToast(this.companionMgr.active.def.deathMsg,2.5);
+              }else{ this.damagePlayer(ud.dmg); }
+            }else{ this.damagePlayer(ud.dmg); }
+          }
         }else{
-          if(dist<2.0 && ud.atkCd<=0){ ud.atkCd=1.2; this.damagePlayer(ud.dmg); }
+          if(dist<2.0 && ud.atkCd<=0){
+            ud.atkCd=1.2;
+            if(this.companionMgr.isActive()){
+              const compPos=this.companionMgr.active.mesh.position;
+              const compDist=e.position.distanceTo(compPos);
+              if(compDist<dist && compDist<2.5){
+                const killed=this.companionMgr.damage(ud.dmg);
+                if(killed) this.ui.showToast(this.companionMgr.active.def.deathMsg,2.5);
+              }else{ this.damagePlayer(ud.dmg); }
+            }else{ this.damagePlayer(ud.dmg); }
+          }
           else if(dist<12 && ud.spitCd<=0){ ud.spitCd=2.2; this.spawnSpit(e.position.clone().add(v3(0,1.1,0)), p.clone().add(v3(0,0.6,0))); }
         }
       }
@@ -3066,6 +3095,18 @@ class Game{
     this.updateSpit(dt);
     this.particles.update(dt);
     this.updateShake(dt);
+
+    // Update companion
+    if(this.companionMgr.isActive()){
+      this.companionMgr.setVisible(!this.player.inVault);
+      const enemyGroup=inDungeon?null:this.world.enemies;
+      this.companionMgr.update(dt, this.player.pos, enemyGroup, (enemy, dmg)=>{
+        enemy.userData.hp-=dmg;
+        enemy.userData.aggro=1;
+        this.enemyBarShow(enemy.userData);
+        if(enemy.userData.hp<=0) this.killEnemy(enemy);
+      });
+    }
 
     // Fade reveal light
     if(this._revealTimer!==undefined && this._revealTimer>0){

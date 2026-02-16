@@ -1273,8 +1273,36 @@ export const DialogueTrees = {
         text: "Ally. You're always welcome at the outpost. Need anything?",
         choices: [
           { text: "Can I trade?", next: "vendor" },
+          { text: "I could use a companion. Anyone willing to join me?", next: "recruit_offer",
+            condition: (player, game) => !Q(game).getFlag("companion_recruited_hana"),
+            conditionLabel: "[Recruit]"
+          },
           { text: "Just checking in.", next: "goodbye" }
         ]
+      },
+      recruit_offer: {
+        id: "recruit_offer",
+        speaker: "Warden Aoi",
+        text: "Hana — one of our scouts — has been wanting to explore beyond the outpost. She's tough, fast, and knows the land. I'll send her with you if you promise to bring her back alive.",
+        choices: [
+          { text: "I'll look after her. Send her over.", next: "recruit_accept" },
+          { text: "Not right now.", next: "goodbye" }
+        ]
+      },
+      recruit_accept: {
+        id: "recruit_accept",
+        speaker: "Warden Aoi",
+        text: "Hana! You're with the vault dweller. Stay sharp. Don't die — I'd hate the paperwork.",
+        choices: [
+          { text: "[Hana joins your party]", next: null }
+        ],
+        effect: (player, game) => {
+          if (game.companionMgr) {
+            game.companionMgr.recruit("warden_scout", Q(game), player.pos);
+            Q(game).addLog("Recruited Warden Scout Hana as a companion.");
+            game.ui.showToast("Hana has joined you!", 2.5);
+          }
+        }
       },
       // --- Vendor ---
       vendor: {

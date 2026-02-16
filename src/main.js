@@ -494,8 +494,8 @@ class World{
       g.add(path);
     }
 
-    // instanced grass
-    const grassCount=biome===0?80:180;
+    // instanced grass (reduced counts for performance)
+    const grassCount=biome===0?50:120;
     const instGrass=new THREE.InstancedMesh(this.grassGeom,this.grassMat,grassCount);
     const dummy=new THREE.Object3D();
     for(let i=0;i<grassCount;i++){
@@ -514,7 +514,7 @@ class World{
     g.add(instGrass);
 
     // rocks
-    const rockCount=biome===2?18:12;
+    const rockCount=biome===2?12:8;
     const instRocks=new THREE.InstancedMesh(this.rockGeom,this.rockMat,rockCount);
     for(let i=0;i<rockCount;i++){
       const px=(rng()-0.5)*this.tileSize;
@@ -592,8 +592,10 @@ class World{
       for(let i=0;i<n;i++){
         const kind=rng()<0.55?"crawler":"stalker";
         const e=this.makeEnemy(kind);
-        e.position.set((rng()-0.5)*this.tileSize*0.75,0,(rng()-0.5)*this.tileSize*0.75);
-        g.add(e);
+        // Position in world space (tile offset + local offset)
+        const wx=tx*this.tileSize+(rng()-0.5)*this.tileSize*0.75;
+        const wz=tz*this.tileSize+(rng()-0.5)*this.tileSize*0.75;
+        e.position.set(wx,0,wz);
         this.enemies.add(e);
         enemies.push(e);
       }
@@ -606,6 +608,12 @@ class World{
     const t=this.tiles.get(k); if(!t) return;
     for(const c of t.interactables) this.interact.remove(c);
     for(const e of t.enemies) this.enemies.remove(e);
+    // Dispose geometries and materials to free GPU memory
+    t.g.traverse(o=>{
+      if(o.isMesh){
+        if(o.geometry && !o.geometry._shared) o.geometry.dispose();
+      }
+    });
     this.static.remove(t.g);
     this.tiles.delete(k);
   }
@@ -788,6 +796,7 @@ class Vault{
     this.matDoor=new THREE.MeshStandardMaterial({color:0x2c394f,roughness:0.65,metalness:0.15});
     this.matLight=new THREE.MeshStandardMaterial({color:0x9bd3ff,emissive:0x9bd3ff,emissiveIntensity:0.8});
     this.build();
+    this.buildExterior();
   }
   build(){
     const floor=new THREE.Mesh(new THREE.PlaneGeometry(36,28),this.matFloor);
@@ -833,7 +842,77 @@ class Vault{
       this.group.add(l);
     }
   }
+  buildExterior(){
+    // Vault exterior structure visible when player is outside
+    this.exterior=new THREE.Group();
+    this.scene.add(this.exterior);
+    this.exterior.visible=false;
+
+    const matBunker=new THREE.MeshStandardMaterial({color:0x2c394f,roughness:0.75,metalness:0.15});
+    const matConcrete=new THREE.MeshStandardMaterial({color:0x1c2230,roughness:0.9});
+    const matRust=new THREE.MeshStandardMaterial({color:0x5d3b2a,roughness:1,metalness:0.05});
+    const matSign=new THREE.MeshStandardMaterial({color:0x9bd3ff,emissive:0x9bd3ff,emissiveIntensity:0.5,roughness:0.4});
+
+    // Main bunker mound (half-buried vault entrance)
+    const mound=new THREE.Mesh(new THREE.BoxGeometry(14,5,10),matConcrete);
+    mound.position.set(0,2.5,14);
+    mound.castShadow=true; mound.receiveShadow=true;
+    this.exterior.add(mound);
+
+    // Sloped top
+    const slopeTop=new THREE.Mesh(new THREE.BoxGeometry(16,1,12),matConcrete);
+    slopeTop.position.set(0,5.2,14);
+    slopeTop.rotation.x=-0.15;
+    slopeTop.castShadow=true; slopeTop.receiveShadow=true;
+    this.exterior.add(slopeTop);
+
+    // Door frame
+    const doorFrame=new THREE.Mesh(new THREE.BoxGeometry(6,5,1.5),matBunker);
+    doorFrame.position.set(0,2.5,9.2);
+    doorFrame.castShadow=true;
+    this.exterior.add(doorFrame);
+
+    // Vault entrance door (interactable)
+    const extDoor=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,0.7,16),matBunker);
+    extDoor.rotation.x=Math.PI/2;
+    extDoor.position.set(0,2.5,8.5);
+    extDoor.userData={interact:true,kind:"vaultEntryDoor",name:"Vault 811 Entrance"};
+    extDoor.castShadow=true;
+    this.extDoor=extDoor;
+    this.exterior.add(extDoor);
+
+    // "811" sign above entrance
+    const sign=new THREE.Mesh(new THREE.BoxGeometry(3,0.6,0.15),matSign);
+    sign.position.set(0,5.0,8.8);
+    this.exterior.add(sign);
+
+    // Side pipes/vents
+    for(const sx of [-5,5]){
+      const pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,3,8),matRust);
+      pipe.position.set(sx,4.5,14);
+      pipe.castShadow=true;
+      this.exterior.add(pipe);
+    }
+
+    // Ground pad
+    const pad=new THREE.Mesh(new THREE.PlaneGeometry(20,14),matConcrete);
+    pad.rotation.x=-Math.PI/2;
+    pad.position.set(0,0.02,16);
+    pad.receiveShadow=true;
+    this.exterior.add(pad);
+
+    // Barricades around entrance
+    const barricade1=new THREE.Mesh(new THREE.BoxGeometry(2,1.5,4),matRust);
+    barricade1.position.set(-6,0.75,12);
+    barricade1.castShadow=true;
+    this.exterior.add(barricade1);
+    const barricade2=new THREE.Mesh(new THREE.BoxGeometry(2,1.5,4),matRust);
+    barricade2.position.set(6,0.75,12);
+    barricade2.castShadow=true;
+    this.exterior.add(barricade2);
+  }
   setVisible(v){this.group.visible=v;}
+  setExteriorVisible(v){this.exterior.visible=v;}
 }
 
 // ---------------- Player ----------------
@@ -1330,8 +1409,8 @@ class Game{
   constructor(){
     this.ui=makeUI();
 
-    this.renderer=new THREE.WebGLRenderer({antialias:true});
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
     this.renderer.setSize(innerWidth,innerHeight);
     this.renderer.shadowMap.enabled=true;
     this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -1341,7 +1420,7 @@ class Game{
     this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
     this.fov=70;
-    this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.05,700);
+    this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.1,500);
     this.scene.add(this.camera);
 
     this.clock=new THREE.Clock();
@@ -1413,7 +1492,7 @@ class Game{
     this.sun.position.set(50,70,20);
     this.sun.castShadow=true;
     this.sun.shadow.mapSize.set(1024,1024);
-    Object.assign(this.sun.shadow.camera,{near:1,far:200,left:-80,right:80,top:80,bottom:-80});
+    Object.assign(this.sun.shadow.camera,{near:1,far:150,left:-60,right:60,top:60,bottom:-60});
     this.scene.add(this.sun);
 
     // Hemisphere light for better ambient variation
@@ -1426,7 +1505,7 @@ class Game{
   }
 
   _makeSky(){
-    const geo=new THREE.SphereGeometry(500,20,16);
+    const geo=new THREE.SphereGeometry(450,16,12);
     const mat=new THREE.MeshBasicMaterial({color:0x0a0f17,side:THREE.BackSide});
     this.sky=new THREE.Mesh(geo,mat);
     this.scene.add(this.sky);
@@ -1464,8 +1543,8 @@ class Game{
     this.ui.cut.style.display="none";
     this.ui.dlg.panel.style.display="none";
     this.vault.setVisible(true);
+    this.vault.setExteriorVisible(false);
     this.npcMgr.setVisible(true);
-    this.audio.stopAmbient?.();
     const buttons=[
       {label:"New Game", onClick:()=>this.startNewGame()},
       {label:this.save.hasSave?"Continue":"Continue (No Save)", onClick:()=>this.save.hasSave?this.continueGame():this.ui.showToast("No save found. Start a new game.")},
@@ -1634,6 +1713,7 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(true);
+    this.vault.setExteriorVisible(false);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
     // Reset vault door
@@ -1653,6 +1733,7 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(this.player.inVault);
+    this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
@@ -1703,6 +1784,7 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
+    this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
@@ -1937,6 +2019,7 @@ class Game{
       if(obj.traverse) obj.traverse(o=>{if(o.isMesh) meshes.push(o);});
     };
     add(this.vault.group);
+    if(this.vault.exterior) add(this.vault.exterior);
     add(this.world.enemies);
     add(this.world.interact);
     add(this.npcMgr.group);
@@ -2031,8 +2114,12 @@ class Game{
     root.parent?.remove(root);
   }
 
-  // Interaction
+  // Interaction (throttled to reduce per-frame raycast cost)
+  _interactTimer=0;
   updateInteract(){
+    this._interactTimer-=1/60;
+    if(this._interactTimer>0 && this.player.interactTarget) return;
+    this._interactTimer=0.1; // check ~10 times per second
     this.player.interactTarget=null;
     const dir=this.getForward();
     const res=this.raycast(this.camera.position,dir,3.2);
@@ -2059,6 +2146,8 @@ class Game{
         hintText=`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name||"Object"}`;
       } else if(ud.kind==="vaultDoor"){
         hintText=`E: Open ${ud.name||"Object"}`;
+      } else if(ud.kind==="vaultEntryDoor"){
+        hintText=`E: Enter ${ud.name||"Vault 811"}`;
       } else if(ud.kind==="terminal"){
         hintText=`E: Access ${ud.name||"Terminal"}`;
       } else if(ud.kind==="restPoint"){
@@ -2130,6 +2219,8 @@ class Game{
         this.audio.click();
       }else if(ud.kind==="vaultDoor"){
         this.exitVault();
+      }else if(ud.kind==="vaultEntryDoor"){
+        this.enterVault();
       }else if(ud.kind==="restPoint"){
         this.player.hp=this.player.hpMax;
         this.player.stamina=this.player.staminaMax;
@@ -2257,10 +2348,12 @@ class Game{
   _completeExitVault(){
     this.player.inVault=false;
     this.vault.setVisible(false);
+    this.vault.setExteriorVisible(true);
     this.npcMgr.setOutsideVisible(true);
     this.outpost.group.visible=true;
-    this.player.pos.set(0,1.6,20);
-    this.player.yaw=Math.PI;
+    // Spawn player just outside the vault entrance facing away
+    this.player.pos.set(0,1.6,6);
+    this.player.yaw=0;
     this.audio.startAmbient("waste");
 
     // Music swell
@@ -2270,22 +2363,37 @@ class Game{
 
     // Dramatic reveal lighting
     this._revealLight=new THREE.PointLight(0xffe0aa,3.0,80,1.5);
-    this._revealLight.position.set(0,8,22);
+    this._revealLight.position.set(0,8,8);
     this.scene.add(this._revealLight);
     this._revealTimer=3.0;
 
     this.ui.showToast("The air tastes like old lightning.",3.0);
 
-    // Enemy intro moment — spawn a nearby enemy for tension
+    // Enemy intro moment — spawn a nearby enemy for tension (far enough to not teleport-attack)
     if(this.world.enemies.children.length===0){
       const e=this.world.makeEnemy("crawler");
-      e.position.set(12,0,35);
+      e.position.set(20,0,40);
       this.world.enemies.add(e);
-      this.scene.add(e);
     }
   }
 
-  // Enemies AI
+  enterVault(){
+    this.player.inVault=true;
+    this.vault.setVisible(true);
+    this.vault.setExteriorVisible(false);
+    this.npcMgr.setVisible(true);
+    this.npcMgr.setOutsideVisible(false);
+    this.outpost.group.visible=false;
+    this.player.pos.set(0,1.6,10);
+    this.player.yaw=Math.PI;
+    this.audio.startAmbient("vault");
+    this.audio.tone(80,0.4,"sawtooth",0.1);
+    this.ui.showToast("Entered Vault 811.",2.0);
+  }
+
+  // Enemies AI — reusable vectors to reduce per-frame allocations
+  _enemyToP=new THREE.Vector3();
+  _enemyDir=new THREE.Vector3();
   updateEnemies(dt){
     const p=this.player.pos;
     for(const e of this.world.enemies.children){
@@ -2294,13 +2402,18 @@ class Game{
       ud.spitCd=Math.max(0,ud.spitCd-dt);
       ud.lastSeen+=dt;
 
-      const toP=p.clone().sub(e.position);
-      const dist=toP.length();
+      this._enemyToP.copy(p).sub(e.position);
+      this._enemyToP.y=0;
+      const dist=this._enemyToP.length();
       const sees=dist<22 && !this.player.inVault;
-      if(sees){ ud.aggro=1; ud.lastSeen=0; }
-      else ud.aggro=lerp(ud.aggro,0,0.35*dt);
+      if(sees){ ud.aggro=Math.min(1,ud.aggro+2.0*dt); ud.lastSeen=0; }
+      else ud.aggro=Math.max(0,ud.aggro-0.35*dt);
 
       ud.state = ud.aggro>0.2 ? "chase":"wander";
+
+      // Cap max movement per frame to prevent teleporting
+      const maxStep=ud.speed*dt;
+      const maxStepClamped=Math.min(maxStep,0.5);
 
       if(ud.state==="wander"){
         ud.wanderT-=dt;
@@ -2309,10 +2422,14 @@ class Game{
           const a=Math.random()*Math.PI*2;
           ud.wanderDir.set(Math.cos(a),0,Math.sin(a));
         }
-        e.position.addScaledVector(ud.wanderDir,ud.speed*0.25*dt);
+        const wanderStep=Math.min(ud.speed*0.25*dt,0.3);
+        e.position.addScaledVector(ud.wanderDir,wanderStep);
       }else{
-        if(dist>0.001) toP.normalize();
-        e.position.addScaledVector(toP,ud.speed*dt);
+        if(dist>1.2){
+          this._enemyDir.copy(this._enemyToP).normalize();
+          const chaseStep=Math.min(maxStepClamped,dist-1.0);
+          e.position.addScaledVector(this._enemyDir,chaseStep);
+        }
 
         if(ud.kind==="crawler"){
           if(dist<1.6 && ud.atkCd<=0){ ud.atkCd=0.9; this.damagePlayer(ud.dmg); }
@@ -2323,8 +2440,8 @@ class Game{
       }
 
       if(dist>0.001){
-        const ang=Math.atan2(toP.x,toP.z);
-        e.rotation.y=lerp(e.rotation.y,ang,10*dt);
+        const ang=Math.atan2(this._enemyToP.x,this._enemyToP.z);
+        e.rotation.y=lerp(e.rotation.y,ang,6*dt);
       }
       e.position.y=0;
       e.position.x=clamp(e.position.x,-400,400);
@@ -2389,6 +2506,7 @@ class Game{
     this.player.stamina=this.player.staminaMax;
     this.player.inVault=true;
     this.vault.setVisible(true);
+    this.vault.setExteriorVisible(false);
     this.player.pos.set(0,1.6,6);
     this.audio.startAmbient("vault");
     this.quest.step=0;
@@ -2544,6 +2662,7 @@ class Game{
     // mode-specific updates
     if(this.mode==="intro"){
       this.vault.setVisible(true);
+      this.vault.setExteriorVisible(false);
       this.updateTime(dt);
       this.updateCutscene(dt);
       this.renderHUD();
@@ -2592,6 +2711,7 @@ class Game{
     this.updateTime(dt);
     this.player.update(dt,this.input,this);
     this.vault.setVisible(this.player.inVault);
+    this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setVisible(this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;

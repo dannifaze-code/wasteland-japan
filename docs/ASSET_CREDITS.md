@@ -14,3 +14,9 @@ project. Keep one entry per pack.
 ```
 
 <!-- Add entries below this line -->
+
+### Japanese Iron Shack (小屋トタン)
+- **Source:** allfilestomove pack
+- **License:** See assets/_licenses/ for details
+- **Files:** models/environment/buildings/小屋トタン.fbx, textures/environment/buildings/小屋トタン_*.png
+- **Notes:** Corrugated-iron shack building. Source files (.blend, .unitypackage) archived in assets/_source_zips/

@@ -105,6 +105,16 @@
         "z": -49.706744868035194
       },
       "notes": "Dungeon door (terminal-gated) to Rail Service Room interior."
+    },
+    {
+      "id": "iron_shack_01",
+      "name": "Japanese Iron Shack",
+      "type": "iron_shack",
+      "world": {
+        "x": -60.5,
+        "z": 120.3
+      },
+      "notes": "Abandoned corrugated-iron shack. Scavengeable shelter near the forest edge."
     }
   ]
 }

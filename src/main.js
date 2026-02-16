@@ -11,6 +11,7 @@ import { attemptLockpick, isUnlocked, lockHintLabel } from "./locks.js";
 import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTerminal } from "./terminal.js";
 import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
 import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
+import { DungeonManager, DungeonDefs } from "./dungeon.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -1476,7 +1477,12 @@ class Game{
     this.outpost=buildOutpost(this.scene, this.world);
     this.outpost.group.visible=false;
 
-    this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue
+    // Build dungeon system
+    this.dungeonMgr=new DungeonManager(this.scene, this.world);
+    this.dungeonMgr.spawnDoors();
+    this.dungeonMgr.setDoorsVisible(false);
+
+    this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue dungeon
     this.autoFire=false;
     this.shake={amp:0,t:0};
     this.pipboyTab="journal";
@@ -1745,6 +1751,7 @@ class Game{
     this.vault.setExteriorVisible(false);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
+    this.dungeonMgr.setDoorsVisible(false);
     // Reset vault door
     this.vault.door.rotation.y=0;
     this.vault.door.position.x=0;
@@ -1765,6 +1772,7 @@ class Game{
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.resume();
   }
@@ -1816,6 +1824,7 @@ class Game{
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
   }
@@ -2056,6 +2065,12 @@ class Game{
     add(this.npcMgr.group);
     add(this.npcMgr.outsideGroup);
     if(this.outpost) add(this.outpost.group);
+    // Dungeon doors + interiors
+    if(this.dungeonMgr){
+      for(const dm of this.dungeonMgr.doorMeshes) add(dm.group);
+      for(const [,d] of Object.entries(this.dungeonMgr.dungeons)) add(d.group);
+      if(this._dungeonEnemies) for(const e of this._dungeonEnemies) add(e);
+    }
     for(const l of this._loots) add(l);
     const hits=rc.intersectObjects(meshes,true);
     if(!hits.length) return null;
@@ -2142,7 +2157,13 @@ class Game{
     }
     for(let i=0;i<8;i++) this.particles.spawn(root.position.clone().add(v3(0,0.8,0)),v3(rand(-2,2),rand(1,3),rand(-2,2)),0.35,0.05);
     this.world.enemies.remove(root);
+    // Also remove from dungeon enemy tracking
+    if(this._dungeonEnemies){
+      const idx=this._dungeonEnemies.indexOf(root);
+      if(idx>=0) this._dungeonEnemies.splice(idx,1);
+    }
     root.parent?.remove(root);
+    this.scene.remove(root);
   }
 
   // Interaction (throttled to reduce per-frame raycast cost)
@@ -2175,6 +2196,16 @@ class Game{
       const ud=t.userData;
       if(ud.lockId && ud.lockLevel && !isUnlocked(this.questSys, ud.lockId)){
         hintText=`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name||"Object"}`;
+      } else if(ud.kind==="dungeonDoor"){
+        if(ud.lockId && !isUnlocked(this.questSys, ud.lockId)){
+          hintText=ud.lockType==="terminal"
+            ?`E: Locked — Use nearby terminal (${ud.name})`
+            :`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name}`;
+        }else{
+          hintText=`E: Enter ${ud.name}`;
+        }
+      } else if(ud.kind==="dungeonExit"){
+        hintText=`E: ${ud.name}`;
       } else if(ud.kind==="vaultDoor"){
         hintText=`E: Open ${ud.name||"Object"}`;
       } else if(ud.kind==="vaultEntryDoor"){
@@ -2268,6 +2299,10 @@ class Game{
         this.doSave();
         this.ui.showToast("Rested. Saved.",2.5);
         this.audio.click();
+      }else if(ud.kind==="dungeonDoor"){
+        this.enterDungeon(ud.dungeonId);
+      }else if(ud.kind==="dungeonExit"){
+        this.exitDungeon();
       }else if(ud.kind==="noticeBoard"){
         const topObj=this.questSys.topObjective();
         const lore="The shrine protects those who honor the old ways.";
@@ -2432,6 +2467,85 @@ class Game{
     this.ui.showToast("Entered Vault 811.",2.0);
   }
 
+  // ---- Dungeon enter/exit ----
+  enterDungeon(dungeonId){
+    const def=DungeonDefs[dungeonId];
+    if(!def){ this.ui.showToast("Access denied."); return; }
+    // Lock check
+    const flagKey=`unlocked:${def.lockId}`;
+    if(!this.questSys.getFlag(flagKey)){
+      if(def.doorLockType==="lockpick"){
+        // Try lockpick
+        const result=attemptLockpick(this.player,this.questSys,{lockId:def.lockId,lockLevel:def.lockLevel});
+        if(!result.success){ this.ui.showToast(result.message); this.audio.click(); return; }
+        this.ui.showToast(result.message); this.audio.hit();
+        return; // next interact will enter
+      }else{
+        this.ui.showToast("Locked. Find a terminal to unlock this door."); this.audio.click();
+        return;
+      }
+    }
+    // Enter dungeon
+    const ok=this.dungeonMgr.enter(dungeonId,this.player,this.questSys);
+    if(!ok){ this.ui.showToast("Cannot enter."); return; }
+    // Hide outside world
+    this.world.static.visible=false;
+    this.world.interact.visible=false;
+    this.world.enemies.visible=false;
+    this.outpost.group.visible=false;
+    this.npcMgr.setOutsideVisible(false);
+    this.vault.setExteriorVisible(false);
+    this.dungeonMgr.setDoorsVisible(false);
+    // Spawn dungeon enemies + loot on first enter
+    const d=this.dungeonMgr.dungeons[dungeonId];
+    if(d && !d._contentSpawned){
+      d._contentSpawned=true;
+      const data=this.dungeonMgr.getSpawnData(dungeonId);
+      if(data){
+        for(const eDef of data.enemies){
+          const e=this.world.makeEnemy(eDef.kind);
+          e.position.set(eDef.pos.x,eDef.pos.y,eDef.pos.z);
+          this.scene.add(e);
+          this.dungeonMgr.addEnemy(dungeonId,e);
+          this._dungeonEnemies=this._dungeonEnemies||[];
+          this._dungeonEnemies.push(e);
+        }
+        for(const lDef of data.loot){
+          this.spawnLoot(v3(lDef.pos.x,lDef.pos.y,lDef.pos.z),{id:lDef.id,qty:lDef.qty});
+          const lastLoot=this._loots[this._loots.length-1];
+          if(lastLoot) this.dungeonMgr.addLoot(dungeonId,lastLoot);
+        }
+      }
+    }
+    this.audio.startAmbient("vault"); // reuse vault ambient for dungeons
+    this.ui.showToast(`Entered: ${def.name}`,2.5);
+  }
+
+  exitDungeon(){
+    if(!this.dungeonMgr.isInDungeon()) return;
+    const ret=this.dungeonMgr.exit(this.player);
+    // Clean up dungeon enemies from tracking
+    if(this._dungeonEnemies){
+      for(const e of this._dungeonEnemies) this.scene.remove(e);
+      this._dungeonEnemies=[];
+    }
+    // Show outside world
+    this.world.static.visible=true;
+    this.world.interact.visible=true;
+    this.world.enemies.visible=true;
+    this.outpost.group.visible=true;
+    this.npcMgr.setOutsideVisible(true);
+    this.vault.setExteriorVisible(true);
+    this.dungeonMgr.setDoorsVisible(true);
+    // Restore player position
+    if(ret){
+      this.player.pos.copy(ret.pos);
+      this.player.yaw=ret.yaw;
+    }
+    this.audio.startAmbient("waste");
+    this.ui.showToast("Returned to the surface.",2.0);
+  }
+
   // Enemies AI — reusable vectors to reduce per-frame allocations
   _enemyToP=new THREE.Vector3();
   _enemyDir=new THREE.Vector3();
@@ -2506,6 +2620,41 @@ class Game{
     ball.userData={spit:true,vel:dir.multiplyScalar(16),life:2.0};
     this.scene.add(ball);
     this._spit.push(ball);
+  }
+
+  /** Update enemies that live inside a dungeon (same AI as world enemies) */
+  _updateDungeonEnemies(dt){
+    if(!this._dungeonEnemies) return;
+    const p=this.player.pos;
+    for(let i=this._dungeonEnemies.length-1;i>=0;i--){
+      const e=this._dungeonEnemies[i];
+      const ud=e.userData; if(!ud?.enemy) continue;
+      if(ud.hp<=0) continue;
+      ud.atkCd=Math.max(0,ud.atkCd-dt);
+      ud.spitCd=Math.max(0,ud.spitCd-dt);
+      ud.lastSeen+=dt;
+      this._enemyToP.copy(p).sub(e.position);
+      this._enemyToP.y=0;
+      const dist=this._enemyToP.length();
+      ud.aggro=Math.min(1,ud.aggro+2.0*dt); ud.lastSeen=0;
+      ud.state="chase";
+      const maxStepClamped=Math.min(ud.speed*dt,0.5);
+      if(dist>1.2){
+        this._enemyDir.copy(this._enemyToP).normalize();
+        e.position.addScaledVector(this._enemyDir,Math.min(maxStepClamped,dist-1.0));
+      }
+      if(ud.kind==="crawler"){
+        if(dist<1.6 && ud.atkCd<=0){ ud.atkCd=0.9; this.damagePlayer(ud.dmg); }
+      }else{
+        if(dist<2.0 && ud.atkCd<=0){ ud.atkCd=1.2; this.damagePlayer(ud.dmg); }
+        else if(dist<12 && ud.spitCd<=0){ ud.spitCd=2.2; this.spawnSpit(e.position.clone().add(v3(0,1.1,0)),p.clone().add(v3(0,0.6,0))); }
+      }
+      if(dist>0.001){
+        const ang=Math.atan2(this._enemyToP.x,this._enemyToP.z);
+        e.rotation.y=lerp(e.rotation.y,ang,6*dt);
+      }
+      e.position.y=0;
+    }
   }
 
   updateSpit(dt){
@@ -2781,13 +2930,20 @@ class Game{
     // PLAY update
     this.updateTime(dt);
     this.player.update(dt,this.input,this);
-    this.vault.setVisible(this.player.inVault);
-    this.vault.setExteriorVisible(!this.player.inVault);
-    this.npcMgr.setVisible(this.player.inVault);
-    this.npcMgr.setOutsideVisible(!this.player.inVault);
-    this.outpost.group.visible=!this.player.inVault;
+    const inDungeon=this.dungeonMgr.isInDungeon();
+    this.vault.setVisible(this.player.inVault && !inDungeon);
+    this.vault.setExteriorVisible(!this.player.inVault && !inDungeon);
+    this.npcMgr.setVisible(this.player.inVault && !inDungeon);
+    this.npcMgr.setOutsideVisible(!this.player.inVault && !inDungeon);
+    this.outpost.group.visible=!this.player.inVault && !inDungeon;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault && !inDungeon);
+    if(inDungeon){
+      this.world.static.visible=false;
+      this.world.interact.visible=false;
+      this.world.enemies.visible=false;
+    }
 
-    if(!this.player.inVault){
+    if(!this.player.inVault && !inDungeon){
       this.world.update(this.player.pos);
       // Biome-based fog density
       const tx=Math.floor(this.player.pos.x/this.world.tileSize);
@@ -2901,8 +3057,12 @@ class Game{
     }
 
     this.updateInteract();
-    if(this.player.inVault) this.npcMgr.update(dt, this.player.pos, null);
-    if(!this.player.inVault) this.updateEnemies(dt);
+    if(this.player.inVault && !inDungeon) this.npcMgr.update(dt, this.player.pos, null);
+    if(!this.player.inVault && !inDungeon) this.updateEnemies(dt);
+    // Update dungeon enemies
+    if(inDungeon && this._dungeonEnemies){
+      this._updateDungeonEnemies(dt);
+    }
     this.updateSpit(dt);
     this.particles.update(dt);
     this.updateShake(dt);

@@ -4,6 +4,7 @@
 // Plugs into World tile streaming via onTileCreated / onTileDisposed hooks.
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
+import { isInSafeZone } from "./outpost.js";
 
 // ---- Constants ----
 export const FACTIONS = { WARDENS: "wardens", RAIL: "rail" };
@@ -21,6 +22,15 @@ const SQUAD_SIZE_MAX        = 3;
 const HEAT_PATROL_BONUS     = 30;
 const HEAT_HUNTER_SPAWN     = 60;
 const HEAT_ATTACK_ON_SIGHT  = 80;
+
+// Ambush thresholds
+const AMBUSH_HEAT_THRESHOLD  = 60;
+const AMBUSH_REP_THRESHOLD   = -40;
+const AMBUSH_CHANCE          = 0.20;
+const AMBUSH_SQUAD_MIN       = 3;
+const AMBUSH_SQUAD_MAX       = 4;
+const AMBUSH_COOLDOWN_MS     = 5 * 60 * 1000; // 5 minutes real-time
+const AMBUSH_SPAWN_DIST      = 12; // distance behind player
 
 // Roadblock thresholds
 const ROADBLOCK_SPAWN_REP   = -30;
@@ -196,6 +206,11 @@ export class FactionWorld {
     this._roadblockUnits = [];     // squad units for the roadblock
     this._roadblockWarned = false; // player has been warned this encounter
 
+    // Ambush state
+    this._ambushCooldownUntil = 0; // Date.now() timestamp when cooldown expires
+    this._ambushLastTileKey = null; // track tile to roll once per tile entry
+    this._ambushTriggered = false;  // set true on ambush for UI to read
+
     // Squad counter
     this._nextSquadId = 0;
 
@@ -308,6 +323,10 @@ export class FactionWorld {
 
   update(dt, playerPos, loadedTileKeys, terrain) {
     this._skirmishTimer -= dt;
+
+    // ---- Ambush encounter check ----
+    this._ambushTriggered = false;
+    this._checkAmbush(playerPos, terrain);
 
     // ---- Roadblock lifecycle ----
     this._updateRoadblock(playerPos);
@@ -459,6 +478,88 @@ export class FactionWorld {
     this._roadblockActive = false;
     this._roadblockWarned = false;
     this.questSys.setFlag("roadblock_warned", false);
+  }
+
+  // ---- Ambush encounter ----
+
+  _checkAmbush(playerPos, terrain) {
+    if (!playerPos) return;
+
+    // Determine current tile key
+    const tileSize = this.world.tileSize;
+    const tx = Math.floor(playerPos.x / tileSize);
+    const tz = Math.floor(playerPos.z / tileSize);
+    const tileKey = `${tx},${tz}`;
+
+    // Only roll once per tile entry
+    if (tileKey === this._ambushLastTileKey) return;
+    this._ambushLastTileKey = tileKey;
+
+    // Cooldown: prevent another ambush for 5 minutes real-time
+    if (Date.now() < this._ambushCooldownUntil) return;
+
+    // Must not be in a safe zone
+    if (isInSafeZone(playerPos)) return;
+
+    // Check trigger conditions: heat ≥ 60 OR rep ≤ -40 for any faction
+    let triggerFaction = null;
+    for (const f of [FACTIONS.WARDENS, FACTIONS.RAIL]) {
+      const heat = this.questSys.getHeat(f);
+      const rep = this.questSys.getRep(f);
+      if (heat >= AMBUSH_HEAT_THRESHOLD || rep <= AMBUSH_REP_THRESHOLD) {
+        triggerFaction = f;
+        break;
+      }
+    }
+    if (!triggerFaction) return;
+
+    // 20% chance
+    if (Math.random() >= AMBUSH_CHANCE) return;
+
+    // Spawn 3–4 units behind the player
+    this._spawnAmbush(playerPos, triggerFaction, terrain);
+  }
+
+  _spawnAmbush(playerPos, faction, terrain) {
+    const squadId = `sq_ambush_${this._nextSquadId++}`;
+    const size = AMBUSH_SQUAD_MIN + Math.floor(Math.random() * (AMBUSH_SQUAD_MAX - AMBUSH_SQUAD_MIN + 1));
+
+    // Determine "behind player" direction (opposite of player facing is
+    // unavailable here, so we use a random angle offset from the player)
+    const baseAngle = Math.random() * Math.PI * 2;
+
+    for (let i = 0; i < size; i++) {
+      const role = Math.random() < 0.5 ? "rifle" : "melee";
+      const unit = makeFactionUnit(faction, role, squadId, "__ambush__");
+
+      // Spread units in an arc behind the player
+      const angle = baseAngle + (i - size / 2) * 0.4;
+      const wx = playerPos.x + Math.cos(angle) * AMBUSH_SPAWN_DIST;
+      const wz = playerPos.z + Math.sin(angle) * AMBUSH_SPAWN_DIST;
+      unit.position.set(wx, 0, wz);
+
+      // Ground on terrain
+      if (terrain && terrain.ready) {
+        unit.position.y = terrain.sampleHeight(wx, wz);
+      }
+
+      unit.userData.patrolOrigin = new THREE.Vector3(wx, 0, wz);
+      unit.userData.patrolAngle = angle;
+      unit.userData.ambushSquad = true;
+
+      // Aggro immediately
+      unit.userData.state = "engage";
+      unit.userData._targetRef = { userData: { isPlayer: true, hp: 1 } };
+      unit.userData.targetId = "__player__";
+
+      this.group.add(unit);
+      this.allUnits.push(unit);
+    }
+
+    // Set cooldown and flag
+    this._ambushCooldownUntil = Date.now() + AMBUSH_COOLDOWN_MS;
+    this.questSys.setFlag("recentAmbush", true);
+    this._ambushTriggered = true;
   }
 
   // ---- AI states ----
@@ -651,6 +752,7 @@ export class FactionWorld {
       poiOwnership: { ...this.poiOwnership },
       resolvedSkirmishes: [...this.resolvedSkirmishes],
       roadblockActive: this._roadblockActive,
+      ambushCooldownUntil: this._ambushCooldownUntil,
     };
   }
 
@@ -665,6 +767,10 @@ export class FactionWorld {
     }
     if (data.resolvedSkirmishes) {
       this.resolvedSkirmishes = new Set(data.resolvedSkirmishes);
+    }
+    // Restore ambush cooldown
+    if (data.ambushCooldownUntil) {
+      this._ambushCooldownUntil = data.ambushCooldownUntil;
     }
     // Restore roadblock — actual spawn happens in next update via rep check
     if (data.roadblockActive) {

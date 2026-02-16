@@ -2503,7 +2503,7 @@ class Game{
 
     // Dramatic reveal lighting
     this._revealLight=new THREE.PointLight(0xffe0aa,3.0,80,1.5);
-    this._revealLight.position.set(0,8,8);
+    this._revealLight.position.set(0,spawnY+6,8);
     this.scene.add(this._revealLight);
     this._revealTimer=3.0;
 
@@ -2779,7 +2779,8 @@ class Game{
         this._spit.splice(i,1);
         continue;
       }
-      if(s.position.y<0.1 || s.userData.life<=0){
+      const groundY=(this.useHeightmap&&this.terrain.ready&&!this.player.inVault)?this.terrain.sampleHeight(s.position.x,s.position.z)+0.1:0.1;
+      if(s.position.y<groundY || s.userData.life<=0){
         this.particles.spawn(s.position.clone(),v3(rand(-1,1),1.5,rand(-1,1)),0.2,0.05);
         this.scene.remove(s);
         this._spit.splice(i,1);
@@ -3286,6 +3287,11 @@ class Game{
         this.enemyBarShow(enemy.userData);
         if(enemy.userData.hp<=0) this.killEnemy(enemy);
       });
+      // Ground companion on terrain when outside
+      if(!this.player.inVault && this.useHeightmap && this.terrain.ready && this.companionMgr.active?.mesh){
+        const cm=this.companionMgr.active.mesh;
+        cm.position.y=this.terrain.sampleHeight(cm.position.x,cm.position.z);
+      }
     }
 
     // Fade reveal light

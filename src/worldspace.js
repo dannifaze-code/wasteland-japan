@@ -51,10 +51,16 @@ export class Worldspace {
     if (this.terrain.ready) {
       this._placeAll();
     } else {
-      // Poll until terrain is ready (image loading is async)
+      let attempts = 0;
       const id = setInterval(() => {
+        attempts++;
         if (this.terrain.ready) {
           clearInterval(id);
+          this._placeAll();
+        } else if (attempts > 100) {
+          // Give up after ~10 seconds to avoid infinite polling
+          clearInterval(id);
+          console.warn("Worldspace: terrain not ready after timeout, placing at y=0");
           this._placeAll();
         }
       }, 100);

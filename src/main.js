@@ -15,6 +15,7 @@ import { DungeonManager, DungeonDefs } from "./dungeon.js";
 import { CompanionManager, CompanionDefs } from "./companion.js";
 import { HeightmapTerrain, MAP_SIZE, MAP_HALF, HEIGHT_SCALE } from "./terrain.js";
 import { Worldspace } from "./worldspace.js";
+import { FactionWorld } from "./factionWorld.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -292,7 +293,7 @@ function defaultSave(){
       radiation:0,armor:0,xp:0,level:1,skillPoints:0,
       skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
     },
-    world:{seed:811, useHeightmap:true, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}}
+    world:{seed:811, useHeightmap:true, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}, poiOwners:{}}
   };
 }
 function loadSave(){
@@ -301,7 +302,7 @@ function loadSave(){
     if(!raw) return defaultSave();
     const s=JSON.parse(raw);
     const d=defaultSave();
-    return {...d,...s, player:{...d.player,...s.player}, world:{...d.world,...s.world, quest:{...d.world.quest,...(s.world?.quest||{})}, questSys:{...d.world.questSys,...(s.world?.questSys||{})}}};
+    return {...d,...s, player:{...d.player,...s.player}, world:{...d.world,...s.world, quest:{...d.world.quest,...(s.world?.quest||{})}, questSys:{...d.world.questSys,...(s.world?.questSys||{})}, poiOwners:{...d.world.poiOwners,...(s.world?.poiOwners||{})}}};
   }catch{ return defaultSave(); }
 }
 function writeSave(save){ localStorage.setItem(SAVE_KEY, JSON.stringify({...save,hasSave:true})); }
@@ -1546,6 +1547,11 @@ class Game{
     this.companionMgr=new CompanionManager(this.scene);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
 
+    // Faction control-point ownership
+    this.factionWorld=new FactionWorld(this.worldspace);
+    if(this.save.world.poiOwners) this.factionWorld.fromSave(this.save.world.poiOwners);
+    this.factionWorld.syncFromQuest(this.questSys);
+
     this.cutscene={
       step:0,t:0,hold:0,
       lines:[
@@ -1804,6 +1810,7 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.factionWorld=new FactionWorld(this.worldspace);
     this.useHeightmap=true;
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
@@ -1830,6 +1837,9 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.factionWorld=new FactionWorld(this.worldspace);
+    if(this.save.world.poiOwners) this.factionWorld.fromSave(this.save.world.poiOwners);
+    this.factionWorld.syncFromQuest(this.questSys);
     this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
@@ -1875,6 +1885,7 @@ class Game{
     this.save.world.quest=this.quest;
     this.save.world.questSys=this.questSys.toSave();
     this.save.world.companion=this.companionMgr.toSave();
+    this.save.world.poiOwners=this.factionWorld.toSave();
     this.save.world.useHeightmap=this.useHeightmap;
     // Save dungeon cleared states to prevent re-looting
     const clearedDungeons={};
@@ -1895,6 +1906,10 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
+    // Restore faction control-point ownership
+    this.factionWorld=new FactionWorld(this.worldspace);
+    if(this.save.world.poiOwners) this.factionWorld.fromSave(this.save.world.poiOwners);
+    this.factionWorld.syncFromQuest(this.questSys);
     // Restore dungeon cleared states to prevent re-looting
     if(this.save.world.clearedDungeons){
       for(const [id,cleared] of Object.entries(this.save.world.clearedDungeons)){
@@ -3194,6 +3209,9 @@ class Game{
 
       // Update outside NPCs
       this.npcMgr.updateOutside(dt, this.player.pos);
+
+      // Sync faction control-point ownership from quest flags
+      this.factionWorld.syncFromQuest(this.questSys);
 
       // --- Outpost discover trigger (cached position, no scene scan) ---
       if(!this.questSys.getFlag("discoveredOutpost")){

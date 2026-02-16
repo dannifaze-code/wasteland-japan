@@ -11,6 +11,8 @@ import { attemptLockpick, isUnlocked, lockHintLabel } from "./locks.js";
 import { TERMINAL_CSS, TerminalDefs, buildTerminalUI, renderTerminal, closeTerminal } from "./terminal.js";
 import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
 import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
+import { DungeonManager, DungeonDefs } from "./dungeon.js";
+import { CompanionManager, CompanionDefs } from "./companion.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -306,7 +308,7 @@ function writeSave(save){ localStorage.setItem(SAVE_KEY, JSON.stringify({...save
 const ItemDB={
   stim:{id:"stim",name:"Field Stim",type:"consumable",weight:0.8,desc:"Restores 35 HP."},
   ration:{id:"ration",name:"Ration Pack",type:"consumable",weight:1.2,desc:"Restores 20 HP."},
-  radaway:{id:"radaway",name:"Rad-Away",type:"consumable",weight:0.6,desc:"Removes 30 radiation."},
+  radaway:{id:"radaway",name:"Rad-Away",type:"consumable",weight:0.6,desc:"Removes 20 radiation."},
   scrap:{id:"scrap",name:"Scrap Metal",type:"junk",weight:2.0,desc:"Old world leftovers."},
   cloth:{id:"cloth",name:"Tattered Cloth",type:"junk",weight:0.5,desc:"Useful for crafting."},
   circuits:{id:"circuits",name:"Circuit Board",type:"junk",weight:0.8,desc:"Pre-war electronics."},
@@ -944,8 +946,10 @@ class Player{
     // Deep systems
     this.radiation=0; this.radiationMax=100;
     this.armor=0;
+    this.armorEquipped=null; // itemId or null
     this.xp=0; this.level=1; this.skillPoints=0;
     this.skills={toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0};
+    this._lastRadThreshold=0; // for toast tracking
 
     // Third-person model
     this.model=this._buildModel();
@@ -1102,6 +1106,17 @@ class Player{
     return g;
   }
   weight(){return invWeight(this.inv);}
+  effectiveMaxHP(){
+    // Radiation reduces max HP: at 100 rad => -50%. Floor at 35% of base hpMax.
+    const factor=1-this.radiation*0.005;
+    return Math.max(this.hpMax*0.35, Math.round(this.hpMax*factor));
+  }
+  armorReduction(dmg){
+    // Armor reduces incoming damage: at 100 armor => 40% reduction. Clamp max 45%.
+    const totalArmor=this.armor+this.skills.mutantHide*5;
+    const reduction=clamp(totalArmor*0.006,0,0.45);
+    return Math.max(1, dmg*(1-reduction));
+  }
   setWeapon(i){
     this.equipped=clamp(i,0,WeaponDefs.length-1);
     this.weapon=WeaponDefs[this.equipped];
@@ -1142,7 +1157,7 @@ class Player{
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
       equipped:this.equipped,ammo:{...this.reserve},mags:{...this.mag},inv:JSON.parse(JSON.stringify(this.inv)),maxWeight:this.maxWeight,
-      radiation:this.radiation,armor:this.armor,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
+      radiation:this.radiation,armor:this.armor,armorEquipped:this.armorEquipped,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
   }
   fromSave(s){
     this.pos.set(s.pos.x,s.pos.y,s.pos.z);
@@ -1155,6 +1170,7 @@ class Player{
     this.maxWeight=s.maxWeight||55;
     this.radiation=s.radiation||0;
     this.armor=s.armor||0;
+    this.armorEquipped=s.armorEquipped||null;
     this.xp=s.xp||0;
     this.level=s.level||1;
     this.skillPoints=s.skillPoints||0;
@@ -1237,12 +1253,27 @@ class Player{
       if(this.muzzleFlashTimer<=0) this.muzzleFlash.visible=false;
     }
 
-    // Radiation outside vault
+    // Radiation sources (proximity-based)
     if(!this.inVault){
-      this.radiation=Math.min(this.radiationMax,this.radiation+1.2*dt);
-      if(this.radiation>60) this.hp=Math.max(0,this.hp-4*dt);
+      let radGain=0;
+      // Check nearby POIs for radiation via env callback
+      if(env.getRadiationAtPos) radGain+=env.getRadiationAtPos(this.pos);
+      this.radiation=Math.min(this.radiationMax,this.radiation+radGain*dt);
+      // Radiation threshold toasts
+      const thresholds=[25,50,75];
+      for(const th of thresholds){
+        if(this.radiation>=th && this._lastRadThreshold<th){
+          this._lastRadThreshold=th;
+          if(env.showToast) env.showToast(`Radiation rising… (${Math.round(this.radiation)} RAD)`);
+        }
+      }
+      if(this.radiation<this._lastRadThreshold) this._lastRadThreshold=Math.floor(this.radiation/25)*25;
+      // Clamp HP to effectiveMaxHP
+      const effMax=this.effectiveMaxHP();
+      if(this.hp>effMax) this.hp=effMax;
     }else{
       this.radiation=Math.max(0,this.radiation-3*dt);
+      if(this.radiation<this._lastRadThreshold) this._lastRadThreshold=Math.floor(this.radiation/25)*25;
     }
 
     // ADS (aim-down-sights) — smooth in, instant out
@@ -1447,7 +1478,12 @@ class Game{
     this.outpost=buildOutpost(this.scene, this.world);
     this.outpost.group.visible=false;
 
-    this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue
+    // Build dungeon system
+    this.dungeonMgr=new DungeonManager(this.scene, this.world);
+    this.dungeonMgr.spawnDoors();
+    this.dungeonMgr.setDoorsVisible(false);
+
+    this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue dungeon
     this.autoFire=false;
     this.shake={amp:0,t:0};
     this.pipboyTab="journal";
@@ -1455,6 +1491,10 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+
+    // Companion system
+    this.companionMgr=new CompanionManager(this.scene);
+    if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
 
     this.cutscene={
       step:0,t:0,hold:0,
@@ -1716,6 +1756,7 @@ class Game{
     this.vault.setExteriorVisible(false);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
+    this.dungeonMgr.setDoorsVisible(false);
     // Reset vault door
     this.vault.door.rotation.y=0;
     this.vault.door.position.x=0;
@@ -1736,6 +1777,7 @@ class Game{
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.resume();
   }
@@ -1770,6 +1812,7 @@ class Game{
     this.save.player=this.player.toSave();
     this.save.world.quest=this.quest;
     this.save.world.questSys=this.questSys.toSave();
+    this.save.world.companion=this.companionMgr.toSave();
     this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
@@ -1782,11 +1825,13 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
   }
@@ -1937,12 +1982,14 @@ class Game{
       this.ui.invList.appendChild(row);
     });
 
+    const effMax=this.player.effectiveMaxHP();
+    const totalArmor=this.player.armor+this.player.skills.mutantHide*5;
     this.ui.panel.innerHTML=`
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Status</div>
-      <div class="k">HP: ${Math.round(this.player.hp)} / ${this.player.hpMax}</div>
+      <div class="k">HP: ${Math.round(this.player.hp)} / ${effMax}${effMax<this.player.hpMax?` (base ${this.player.hpMax})`:""}</div>
       <div class="k">Stamina: ${Math.round(this.player.stamina)} / ${this.player.staminaMax}</div>
       <div class="k">Radiation: ${Math.round(this.player.radiation)} / ${this.player.radiationMax}</div>
-      <div class="k">Armor: ${this.player.armor}</div>
+      <div class="k">Armor: ${totalArmor}</div>
       <div class="k">Level: ${this.player.level} (XP: ${this.player.xp}/${this.player.level*100})</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Ammo</div>
@@ -1959,9 +2006,9 @@ class Game{
   useItem(idx){
     const it=this.player.inv[idx]; if(!it) return;
     const def=ItemDB[it.id];
-    if(it.id==="stim"){ this.player.hp=clamp(this.player.hp+35,0,this.player.hpMax); this.ui.showToast("Used Field Stim (+35 HP)"); }
-    else if(it.id==="ration"){ this.player.hp=clamp(this.player.hp+20,0,this.player.hpMax); this.ui.showToast("Ate Ration Pack (+20 HP)"); }
-    else if(it.id==="radaway"){ this.player.radiation=Math.max(0,this.player.radiation-30); this.ui.showToast("Used Rad-Away (-30 RAD)"); }
+    if(it.id==="stim"){ const effMax=this.player.effectiveMaxHP(); this.player.hp=clamp(this.player.hp+35,0,effMax); this.ui.showToast("Used Field Stim (+35 HP)"); }
+    else if(it.id==="ration"){ const effMax=this.player.effectiveMaxHP(); this.player.hp=clamp(this.player.hp+20,0,effMax); this.ui.showToast("Ate Ration Pack (+20 HP)"); }
+    else if(it.id==="radaway"){ this.player.radiation=Math.max(0,this.player.radiation-20); this.ui.showToast("Used Rad-Away (-20 RAD)"); }
     else if(def?.type==="armor"){
       const bonus=it.id==="vest"?10:it.id==="plating"?20:5;
       this.player.armor+=bonus;
@@ -2025,6 +2072,12 @@ class Game{
     add(this.npcMgr.group);
     add(this.npcMgr.outsideGroup);
     if(this.outpost) add(this.outpost.group);
+    // Dungeon doors + interiors
+    if(this.dungeonMgr){
+      for(const dm of this.dungeonMgr.doorMeshes) add(dm.group);
+      for(const [,d] of Object.entries(this.dungeonMgr.dungeons)) add(d.group);
+      if(this._dungeonEnemies) for(const e of this._dungeonEnemies) add(e);
+    }
     for(const l of this._loots) add(l);
     const hits=rc.intersectObjects(meshes,true);
     if(!hits.length) return null;
@@ -2111,7 +2164,13 @@ class Game{
     }
     for(let i=0;i<8;i++) this.particles.spawn(root.position.clone().add(v3(0,0.8,0)),v3(rand(-2,2),rand(1,3),rand(-2,2)),0.35,0.05);
     this.world.enemies.remove(root);
+    // Also remove from dungeon enemy tracking
+    if(this._dungeonEnemies){
+      const idx=this._dungeonEnemies.indexOf(root);
+      if(idx>=0) this._dungeonEnemies.splice(idx,1);
+    }
     root.parent?.remove(root);
+    this.scene.remove(root);
   }
 
   // Interaction (throttled to reduce per-frame raycast cost)
@@ -2144,6 +2203,16 @@ class Game{
       const ud=t.userData;
       if(ud.lockId && ud.lockLevel && !isUnlocked(this.questSys, ud.lockId)){
         hintText=`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name||"Object"}`;
+      } else if(ud.kind==="dungeonDoor"){
+        if(ud.lockId && !isUnlocked(this.questSys, ud.lockId)){
+          hintText=ud.lockType==="terminal"
+            ?`E: Locked — Use nearby terminal (${ud.name})`
+            :`E: Pick Lock [${lockHintLabel(ud.lockLevel)}] ${ud.name}`;
+        }else{
+          hintText=`E: Enter ${ud.name}`;
+        }
+      } else if(ud.kind==="dungeonExit"){
+        hintText=`E: ${ud.name}`;
       } else if(ud.kind==="vaultDoor"){
         hintText=`E: Open ${ud.name||"Object"}`;
       } else if(ud.kind==="vaultEntryDoor"){
@@ -2210,7 +2279,17 @@ class Game{
           const roll=Math.random();
           if(roll<0.35) this.spawnLoot(t.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*3)});
           else if(roll<0.65) this.spawnLoot(t.position.clone(),{id:"ration",qty:1});
-          else this.spawnLoot(t.position.clone(),{id:"stim",qty:1});
+          else if(roll<0.85) this.spawnLoot(t.position.clone(),{id:"stim",qty:1});
+          else this.spawnLoot(t.position.clone(),{id:"radaway",qty:1});
+          // Tainted container: deterministic chance based on lockId or name hash
+          if(!this.player.inVault){
+            const taintSeed=(ud.lockId||ud.name||"crate").split("").reduce((a,c)=>a+c.charCodeAt(0),0);
+            if(taintSeed%5===0){
+              const radBurst=8+Math.floor(taintSeed%12);
+              this.player.radiation=Math.min(this.player.radiationMax,this.player.radiation+radBurst);
+              this.ui.showToast(`Tainted! (+${radBurst} RAD)`,2.0);
+            }
+          }
           this.ui.showToast(`${ud.name} opened.`);
           this.audio.hit();
         }
@@ -2222,11 +2301,16 @@ class Game{
       }else if(ud.kind==="vaultEntryDoor"){
         this.enterVault();
       }else if(ud.kind==="restPoint"){
-        this.player.hp=this.player.hpMax;
+        this.player.hp=this.player.effectiveMaxHP();
         this.player.stamina=this.player.staminaMax;
+        if(this.companionMgr.active) this.companionMgr.revive();
         this.doSave();
         this.ui.showToast("Rested. Saved.",2.5);
         this.audio.click();
+      }else if(ud.kind==="dungeonDoor"){
+        this.enterDungeon(ud.dungeonId);
+      }else if(ud.kind==="dungeonExit"){
+        this.exitDungeon();
       }else if(ud.kind==="noticeBoard"){
         const topObj=this.questSys.topObjective();
         const lore="The shrine protects those who honor the old ways.";
@@ -2391,6 +2475,85 @@ class Game{
     this.ui.showToast("Entered Vault 811.",2.0);
   }
 
+  // ---- Dungeon enter/exit ----
+  enterDungeon(dungeonId){
+    const def=DungeonDefs[dungeonId];
+    if(!def){ this.ui.showToast("Access denied."); return; }
+    // Lock check
+    const flagKey=`unlocked:${def.lockId}`;
+    if(!this.questSys.getFlag(flagKey)){
+      if(def.doorLockType==="lockpick"){
+        // Try lockpick
+        const result=attemptLockpick(this.player,this.questSys,{lockId:def.lockId,lockLevel:def.lockLevel});
+        if(!result.success){ this.ui.showToast(result.message); this.audio.click(); return; }
+        this.ui.showToast(result.message); this.audio.hit();
+        return; // next interact will enter
+      }else{
+        this.ui.showToast("Locked. Find a terminal to unlock this door."); this.audio.click();
+        return;
+      }
+    }
+    // Enter dungeon
+    const ok=this.dungeonMgr.enter(dungeonId,this.player,this.questSys);
+    if(!ok){ this.ui.showToast("Cannot enter."); return; }
+    // Hide outside world
+    this.world.static.visible=false;
+    this.world.interact.visible=false;
+    this.world.enemies.visible=false;
+    this.outpost.group.visible=false;
+    this.npcMgr.setOutsideVisible(false);
+    this.vault.setExteriorVisible(false);
+    this.dungeonMgr.setDoorsVisible(false);
+    // Spawn dungeon enemies + loot on first enter
+    const d=this.dungeonMgr.dungeons[dungeonId];
+    if(d && !d._contentSpawned){
+      d._contentSpawned=true;
+      const data=this.dungeonMgr.getSpawnData(dungeonId);
+      if(data){
+        for(const eDef of data.enemies){
+          const e=this.world.makeEnemy(eDef.kind);
+          e.position.set(eDef.pos.x,eDef.pos.y,eDef.pos.z);
+          this.scene.add(e);
+          this.dungeonMgr.addEnemy(dungeonId,e);
+          this._dungeonEnemies=this._dungeonEnemies||[];
+          this._dungeonEnemies.push(e);
+        }
+        for(const lDef of data.loot){
+          this.spawnLoot(v3(lDef.pos.x,lDef.pos.y,lDef.pos.z),{id:lDef.id,qty:lDef.qty});
+          const lastLoot=this._loots[this._loots.length-1];
+          if(lastLoot) this.dungeonMgr.addLoot(dungeonId,lastLoot);
+        }
+      }
+    }
+    this.audio.startAmbient("vault"); // reuse vault ambient for dungeons
+    this.ui.showToast(`Entered: ${def.name}`,2.5);
+  }
+
+  exitDungeon(){
+    if(!this.dungeonMgr.isInDungeon()) return;
+    const ret=this.dungeonMgr.exit(this.player);
+    // Clean up dungeon enemies from tracking
+    if(this._dungeonEnemies){
+      for(const e of this._dungeonEnemies) this.scene.remove(e);
+      this._dungeonEnemies=[];
+    }
+    // Show outside world
+    this.world.static.visible=true;
+    this.world.interact.visible=true;
+    this.world.enemies.visible=true;
+    this.outpost.group.visible=true;
+    this.npcMgr.setOutsideVisible(true);
+    this.vault.setExteriorVisible(true);
+    this.dungeonMgr.setDoorsVisible(true);
+    // Restore player position
+    if(ret){
+      this.player.pos.copy(ret.pos);
+      this.player.yaw=ret.yaw;
+    }
+    this.audio.startAmbient("waste");
+    this.ui.showToast("Returned to the surface.",2.0);
+  }
+
   // Enemies AI — reusable vectors to reduce per-frame allocations
   _enemyToP=new THREE.Vector3();
   _enemyDir=new THREE.Vector3();
@@ -2432,9 +2595,30 @@ class Game{
         }
 
         if(ud.kind==="crawler"){
-          if(dist<1.6 && ud.atkCd<=0){ ud.atkCd=0.9; this.damagePlayer(ud.dmg); }
+          if(dist<1.6 && ud.atkCd<=0){
+            ud.atkCd=0.9;
+            // Sometimes attack companion if closer
+            if(this.companionMgr.isActive()){
+              const compPos=this.companionMgr.active.mesh.position;
+              const compDist=e.position.distanceTo(compPos);
+              if(compDist<dist && compDist<2.0){
+                const killed=this.companionMgr.damage(ud.dmg);
+                if(killed) this.ui.showToast(this.companionMgr.active.def.deathMsg,2.5);
+              }else{ this.damagePlayer(ud.dmg); }
+            }else{ this.damagePlayer(ud.dmg); }
+          }
         }else{
-          if(dist<2.0 && ud.atkCd<=0){ ud.atkCd=1.2; this.damagePlayer(ud.dmg); }
+          if(dist<2.0 && ud.atkCd<=0){
+            ud.atkCd=1.2;
+            if(this.companionMgr.isActive()){
+              const compPos=this.companionMgr.active.mesh.position;
+              const compDist=e.position.distanceTo(compPos);
+              if(compDist<dist && compDist<2.5){
+                const killed=this.companionMgr.damage(ud.dmg);
+                if(killed) this.ui.showToast(this.companionMgr.active.def.deathMsg,2.5);
+              }else{ this.damagePlayer(ud.dmg); }
+            }else{ this.damagePlayer(ud.dmg); }
+          }
           else if(dist<12 && ud.spitCd<=0){ ud.spitCd=2.2; this.spawnSpit(e.position.clone().add(v3(0,1.1,0)), p.clone().add(v3(0,0.6,0))); }
         }
       }
@@ -2467,6 +2651,41 @@ class Game{
     this._spit.push(ball);
   }
 
+  /** Update enemies that live inside a dungeon (same AI as world enemies) */
+  _updateDungeonEnemies(dt){
+    if(!this._dungeonEnemies) return;
+    const p=this.player.pos;
+    for(let i=this._dungeonEnemies.length-1;i>=0;i--){
+      const e=this._dungeonEnemies[i];
+      const ud=e.userData; if(!ud?.enemy) continue;
+      if(ud.hp<=0) continue;
+      ud.atkCd=Math.max(0,ud.atkCd-dt);
+      ud.spitCd=Math.max(0,ud.spitCd-dt);
+      ud.lastSeen+=dt;
+      this._enemyToP.copy(p).sub(e.position);
+      this._enemyToP.y=0;
+      const dist=this._enemyToP.length();
+      ud.aggro=Math.min(1,ud.aggro+2.0*dt); ud.lastSeen=0;
+      ud.state="chase";
+      const maxStepClamped=Math.min(ud.speed*dt,0.5);
+      if(dist>1.2){
+        this._enemyDir.copy(this._enemyToP).normalize();
+        e.position.addScaledVector(this._enemyDir,Math.min(maxStepClamped,dist-1.0));
+      }
+      if(ud.kind==="crawler"){
+        if(dist<1.6 && ud.atkCd<=0){ ud.atkCd=0.9; this.damagePlayer(ud.dmg); }
+      }else{
+        if(dist<2.0 && ud.atkCd<=0){ ud.atkCd=1.2; this.damagePlayer(ud.dmg); }
+        else if(dist<12 && ud.spitCd<=0){ ud.spitCd=2.2; this.spawnSpit(e.position.clone().add(v3(0,1.1,0)),p.clone().add(v3(0,0.6,0))); }
+      }
+      if(dist>0.001){
+        const ang=Math.atan2(this._enemyToP.x,this._enemyToP.z);
+        e.rotation.y=lerp(e.rotation.y,ang,6*dt);
+      }
+      e.position.y=0;
+    }
+  }
+
   updateSpit(dt){
     for(let i=this._spit.length-1;i>=0;i--){
       const s=this._spit[i];
@@ -2476,6 +2695,8 @@ class Game{
 
       if(s.position.distanceTo(this.player.pos)<0.8){
         this.damagePlayer(8);
+        // Stalker spit adds small radiation burst
+        this.player.radiation=Math.min(this.player.radiationMax,this.player.radiation+3);
         this.particles.spawn(s.position.clone(),v3(rand(-2,2),2,rand(-2,2)),0.25,0.06);
         this.scene.remove(s);
         this._spit.splice(i,1);
@@ -2491,8 +2712,7 @@ class Game{
 
   damagePlayer(amount){
     if(this.mode!=="play") return;
-    const totalArmor=this.player.armor+this.player.skills.mutantHide*5;
-    const reduced=Math.max(1,amount-totalArmor*0.3);
+    const reduced=this.player.armorReduction(amount);
     this.player.hp=Math.max(0,this.player.hp-reduced);
     this.audio.hurt();
     this.shakeKick(0.12);
@@ -2502,7 +2722,7 @@ class Game{
 
   onPlayerDead(){
     this.ui.showToast("You fell. The wasteland keeps what it takes.",2.8);
-    this.player.hp=this.player.hpMax;
+    this.player.hp=this.player.effectiveMaxHP();
     this.player.stamina=this.player.staminaMax;
     this.player.inVault=true;
     this.vault.setVisible(true);
@@ -2544,12 +2764,13 @@ class Game{
   // HUD
   renderHUD(){
     const p=this.player;
-    this.ui.hpFill.style.width=`${(p.hp/p.hpMax)*100}%`;
+    const effMax=p.effectiveMaxHP();
+    this.ui.hpFill.style.width=`${(p.hp/effMax)*100}%`;
     this.ui.stFill.style.width=`${(p.stamina/p.staminaMax)*100}%`;
     this.ui.radFill.style.width=`${(p.radiation/p.radiationMax)*100}%`;
     const xpForLevel=p.level*100;
     this.ui.xpFill.style.width=`${(p.xp/xpForLevel)*100}%`;
-    this.ui.armorLbl.textContent=`Armor: ${p.armor}  Lv.${p.level}${p.skillPoints>0?" ["+p.skillPoints+" SP]":""}`;
+    this.ui.armorLbl.textContent=`Armor: ${p.armor+p.skills.mutantHide*5}  Lv.${p.level}${p.skillPoints>0?" ["+p.skillPoints+" SP]":""}`;
 
     const w=p.weapon, id=w.id;
     this.ui.ammo.querySelector(".small").textContent=w.name;
@@ -2566,6 +2787,8 @@ class Game{
     // Radiation warning flash
     if(p.radiation>60){
       this.ui.radFill.style.background=`rgba(255,${Math.floor(100-p.radiation)},50,.85)`;
+    }else if(p.radiation>25){
+      this.ui.radFill.style.background=`rgba(200,255,50,.75)`;
     }else{
       this.ui.radFill.style.background="rgba(100,255,50,.75)";
     }
@@ -2596,6 +2819,32 @@ class Game{
     }
     return false;
   }
+
+  /** Returns radiation gain per second at a world position based on nearby POI sources */
+  getRadiationAtPos(pos){
+    let rad=0;
+    // Base ambient wasteland radiation (very low)
+    if(!this.player.inVault) rad+=0.3;
+    // Industrial stacks (Coastal Works POI): high radiation within 30m
+    // Rail station wreckage: moderate radiation within 25m
+    for(const [,tile] of this.world.tiles){
+      tile.g.traverse(child=>{
+        if(!child.userData?.poi) return;
+        const wp=new THREE.Vector3();
+        child.getWorldPosition(wp);
+        const dx=pos.x-wp.x, dz=pos.z-wp.z;
+        const distSq=dx*dx+dz*dz;
+        if(child.userData.poi==="Coastal Works" && distSq<900){ // within 30m
+          rad+=3.0*(1-Math.sqrt(distSq)/30);
+        }else if((child.userData.poi==="Collapsed Rail Station"||child.userData.poi==="Destroyed Railway") && distSq<625){ // within 25m
+          rad+=1.8*(1-Math.sqrt(distSq)/25);
+        }
+      });
+    }
+    return rad;
+  }
+
+  showToast(msg,dur){this.ui.showToast(msg,dur);}
 
   async loop(){
     requestAnimationFrame(()=>this.loop());
@@ -2710,13 +2959,20 @@ class Game{
     // PLAY update
     this.updateTime(dt);
     this.player.update(dt,this.input,this);
-    this.vault.setVisible(this.player.inVault);
-    this.vault.setExteriorVisible(!this.player.inVault);
-    this.npcMgr.setVisible(this.player.inVault);
-    this.npcMgr.setOutsideVisible(!this.player.inVault);
-    this.outpost.group.visible=!this.player.inVault;
+    const inDungeon=this.dungeonMgr.isInDungeon();
+    this.vault.setVisible(this.player.inVault && !inDungeon);
+    this.vault.setExteriorVisible(!this.player.inVault && !inDungeon);
+    this.npcMgr.setVisible(this.player.inVault && !inDungeon);
+    this.npcMgr.setOutsideVisible(!this.player.inVault && !inDungeon);
+    this.outpost.group.visible=!this.player.inVault && !inDungeon;
+    this.dungeonMgr.setDoorsVisible(!this.player.inVault && !inDungeon);
+    if(inDungeon){
+      this.world.static.visible=false;
+      this.world.interact.visible=false;
+      this.world.enemies.visible=false;
+    }
 
-    if(!this.player.inVault){
+    if(!this.player.inVault && !inDungeon){
       this.world.update(this.player.pos);
       // Biome-based fog density
       const tx=Math.floor(this.player.pos.x/this.world.tileSize);
@@ -2830,11 +3086,27 @@ class Game{
     }
 
     this.updateInteract();
-    if(this.player.inVault) this.npcMgr.update(dt, this.player.pos, null);
-    if(!this.player.inVault) this.updateEnemies(dt);
+    if(this.player.inVault && !inDungeon) this.npcMgr.update(dt, this.player.pos, null);
+    if(!this.player.inVault && !inDungeon) this.updateEnemies(dt);
+    // Update dungeon enemies
+    if(inDungeon && this._dungeonEnemies){
+      this._updateDungeonEnemies(dt);
+    }
     this.updateSpit(dt);
     this.particles.update(dt);
     this.updateShake(dt);
+
+    // Update companion
+    if(this.companionMgr.isActive()){
+      this.companionMgr.setVisible(!this.player.inVault);
+      const enemyGroup=inDungeon?null:this.world.enemies;
+      this.companionMgr.update(dt, this.player.pos, enemyGroup, (enemy, dmg)=>{
+        enemy.userData.hp-=dmg;
+        enemy.userData.aggro=1;
+        this.enemyBarShow(enemy.userData);
+        if(enemy.userData.hp<=0) this.killEnemy(enemy);
+      });
+    }
 
     // Fade reveal light
     if(this._revealTimer!==undefined && this._revealTimer>0){
@@ -2848,7 +3120,7 @@ class Game{
 
     // regen only when safe outside
     if(!this.player.inVault && !this.anyEnemyNear(14)){
-      this.player.hp=Math.min(this.player.hpMax,this.player.hp+3.5*dt);
+      this.player.hp=Math.min(this.player.effectiveMaxHP(),this.player.hp+3.5*dt);
     }
 
     this.renderHUD();

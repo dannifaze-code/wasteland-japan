@@ -2,6 +2,8 @@
 // Unified meta screen: Journal, Inventory, Stats, Factions, Settings
 // DOM overlay with Fallout-ish monospace aesthetic.
 
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
 export const PIPBOY_CSS = `
   .pipboy-overlay{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:min(640px,88vw);max-height:72vh;overflow:auto;border-radius:10px;border:2px solid rgba(80,255,80,.45);background:rgba(5,18,5,.94);color:#33ff66;font-family:"Courier New",Courier,monospace;display:none;pointer-events:auto;padding:0;box-shadow:0 0 40px rgba(30,255,60,.15),inset 0 0 30px rgba(0,0,0,.5)}
   .pipboy-overlay *{color:#33ff66}
@@ -259,11 +261,15 @@ function _renderStats(c, game, deps) {
   const { SkillDefs, renderCallback } = deps;
   let html = "";
 
+  const effMax = p.effectiveMaxHP ? p.effectiveMaxHP() : p.hpMax;
+  const totalArmor = p.armor + (p.skills.mutantHide || 0) * 5;
+  const armorPct = Math.round(clamp(totalArmor * 0.006, 0, 0.45) * 100);
+
   html += `<div class="section-title">Vitals</div>`;
-  html += `<div class="stat-line">HP: ${Math.round(p.hp)} / ${p.hpMax}</div>`;
+  html += `<div class="stat-line">HP: ${Math.round(p.hp)} / ${effMax}${effMax < p.hpMax ? ` <span style="color:#ff8844">(base ${p.hpMax})</span>` : ""}</div>`;
   html += `<div class="stat-line">Stamina: ${Math.round(p.stamina)} / ${p.staminaMax}</div>`;
-  html += `<div class="stat-line">Radiation: ${Math.round(p.radiation)} / ${p.radiationMax}</div>`;
-  html += `<div class="stat-line">Armor: ${p.armor}</div>`;
+  html += `<div class="stat-line">Radiation: ${Math.round(p.radiation)} / ${p.radiationMax}${p.radiation > 25 ? ` <span style="color:#ff8844">(-${Math.round(p.radiation * 0.5)}% max HP)</span>` : ""}</div>`;
+  html += `<div class="stat-line">Armor: ${totalArmor} <span style="opacity:.6">(${armorPct}% reduction)</span></div>`;
   html += `<div class="stat-line">Level: ${p.level}${p.xp !== undefined ? ` (XP: ${p.xp}/${p.level * 100})` : ""}</div>`;
 
   html += `<div class="section-title">Current Weapon</div>`;

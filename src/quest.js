@@ -3,6 +3,8 @@
 // Designed to be data-driven and persisted via the existing save/load system.
 
 // ---- Quest State Manager ----
+const HEAT_DECAY_PER_SECOND = 0.5;
+
 export class Quest {
   constructor() {
     this.stages = {};      // questId -> stage number (0/10/20/30 etc.)
@@ -122,7 +124,7 @@ export class Quest {
   decayHeat(dt) {
     for (const f of Object.keys(this.heat)) {
       if (this.heat[f] > 0) {
-        this.heat[f] = Math.max(0, this.heat[f] - dt * 0.5);
+        this.heat[f] = Math.max(0, this.heat[f] - dt * HEAT_DECAY_PER_SECOND);
       }
     }
   }

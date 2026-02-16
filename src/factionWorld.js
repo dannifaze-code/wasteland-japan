@@ -17,6 +17,11 @@ const MAX_SQUADS            = 6;
 const SQUAD_SIZE_MIN        = 2;
 const SQUAD_SIZE_MAX        = 3;
 
+// Heat thresholds
+const HEAT_PATROL_BONUS     = 30;
+const HEAT_HUNTER_SPAWN     = 60;
+const HEAT_ATTACK_ON_SIGHT  = 80;
+
 // Lightweight seeded RNG (same algo as main.js)
 function mulberry32(seed) {
   return function () {
@@ -238,12 +243,12 @@ export class FactionWorld {
       this.allUnits.push(unit);
     }
 
-    // --- Heat ≥ 30: spawn +1 bonus patrol squad for this faction ---
+    // --- Heat ≥ HEAT_PATROL_BONUS: spawn +1 bonus patrol squad for this faction ---
     const heatVal = this.questSys.getHeat(faction);
-    if (heatVal >= 30 && this.allUnits.length < MAX_SQUADS * SQUAD_SIZE_MAX + SQUAD_SIZE_MAX && rng() < 0.5) {
+    if (heatVal >= HEAT_PATROL_BONUS && this.allUnits.length < MAX_SQUADS * SQUAD_SIZE_MAX + SQUAD_SIZE_MAX && rng() < 0.5) {
       const bonusId = `sq_${this._nextSquadId++}`;
       const bonusSize = SQUAD_SIZE_MIN;
-      const isHunter = heatVal >= 60;
+      const isHunter = heatVal >= HEAT_HUNTER_SPAWN;
       for (let i = 0; i < bonusSize; i++) {
         const role = rng() < 0.5 ? "rifle" : "melee";
         const unit = makeFactionUnit(faction, role, bonusId, tileKey);
@@ -421,7 +426,7 @@ export class FactionWorld {
         if (pdist2 < SKIRMISH_RADIUS * SKIRMISH_RADIUS) {
           const rep = this.questSys.getRep(aud.faction);
           const heat = this.questSys.getHeat(aud.faction);
-          if (rep <= REP_HOSTILE || (aud.hunterSquad && heat >= 80)) {
+          if (rep <= REP_HOSTILE || (aud.hunterSquad && heat >= HEAT_ATTACK_ON_SIGHT)) {
             aud.state = "engage";
             aud._targetRef = { userData: { isPlayer: true, hp: 1 } };
             aud.targetId = "__player__";

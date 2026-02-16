@@ -256,7 +256,7 @@ function _renderInv(c, game, deps) {
 
 function _renderStats(c, game, deps) {
   const p = game.player;
-  const { SkillDefs } = deps;
+  const { SkillDefs, renderCallback } = deps;
   let html = "";
 
   html += `<div class="section-title">Vitals</div>`;
@@ -269,20 +269,38 @@ function _renderStats(c, game, deps) {
   html += `<div class="section-title">Current Weapon</div>`;
   html += `<div class="stat-line">${esc(p.weapon.name)} \u2022 Mag: ${p.mag[p.weapon.id]}/${p.reserve[p.weapon.id]}</div>`;
 
-  html += `<div class="section-title">Skills</div>`;
+  html += `<div class="section-title">Skills${p.skillPoints > 0 ? ` <span style="color:#ffdd44;font-size:12px">(${p.skillPoints} point${p.skillPoints > 1 ? "s" : ""} available)</span>` : ""}</div>`;
   const skillOrder = ["toughness", "scavenger", "quickHands", "ironSights", "mutantHide"];
   for (const key of skillOrder) {
     const def = SkillDefs[key];
     if (!def) continue;
     const lvl = p.skills[key] || 0;
+    const canUp = p.skillPoints > 0 && lvl < def.maxLvl;
     const hint = SKILL_HINTS[key] || "";
     html += `<div class="skill-row">
       <div><div style="font-weight:800;font-size:13px">${esc(def.name)}</div><div class="k" style="font-size:11px">${esc(def.desc)}${hint ? " \u2014 " + esc(hint) : ""}</div></div>
-      <div style="font-size:13px;opacity:.9">${lvl}/${def.maxLvl}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;opacity:.9">${lvl}/${def.maxLvl}</span>
+        ${canUp ? `<div class="chip" data-pipskill="${key}">+</div>` : (lvl >= def.maxLvl ? `<span class="k">MAX</span>` : "")}
+      </div>
     </div>`;
   }
 
   c.innerHTML = html;
+
+  // Bind skill upgrade buttons
+  c.querySelectorAll("[data-pipskill]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sk = btn.dataset.pipskill;
+      if (p.skillPoints > 0 && p.skills[sk] < SkillDefs[sk].maxLvl) {
+        p.skills[sk]++;
+        p.skillPoints--;
+        if (sk === "toughness") p.hpMax = 100 + p.skills.toughness * 15;
+        if (sk === "mutantHide") p.armor = p.skills.mutantHide * 5;
+        if (renderCallback) renderCallback();
+      }
+    });
+  });
 }
 
 function _repBarStyle(rep) {

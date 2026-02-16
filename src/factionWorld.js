@@ -386,6 +386,7 @@ export class FactionWorld {
       } else {
         // Reset warn flag when player leaves warn radius
         this._roadblockWarned = false;
+        this.questSys.setFlag("roadblock_warned", false);
       }
     }
   }
@@ -419,7 +420,7 @@ export class FactionWorld {
     this._roadblockGroup = bg;
 
     // ---- Checkpoint squad ----
-    const squadId = `sq_roadblock`;
+    const squadId = `sq_roadblock_${this._nextSquadId++}`;
     for (let i = 0; i < ROADBLOCK_SQUAD_SIZE; i++) {
       const role = i === 0 ? "rifle" : "melee";
       const unit = makeFactionUnit(FACTIONS.WARDENS, role, squadId, "__roadblock__");

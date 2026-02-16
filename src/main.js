@@ -345,7 +345,7 @@ const CraftRecipes=[
 
 // Skill definitions
 const SkillDefs={
-  toughness:{name:"Toughness",desc:"+15 HP per level",maxLvl:5},
+  toughness:{name:"Toughness",desc:"+15 max HP per Toughness point",maxLvl:5},
   quickHands:{name:"Quick Hands",desc:"-10% reload time per level",maxLvl:5},
   scavenger:{name:"Scavenger",desc:"+15% loot find per level",maxLvl:5},
   ironSights:{name:"Iron Sights",desc:"+8% weapon damage per level",maxLvl:5},
@@ -917,6 +917,32 @@ class Vault{
   }
   setVisible(v){this.group.visible=v;}
   setExteriorVisible(v){this.exterior.visible=v;}
+}
+
+// ---------------- HP helpers ----------------
+function computeHpMax(player){
+  return 100 + (player.level - 1) * 5 + player.skills.toughness * 15;
+}
+
+// Regression test (run via console: _testHpMax())
+function _testHpMax(){
+  const p={level:1,skills:{toughness:0},hp:100,hpMax:100};
+  let pass=true;
+  function check(label,actual,expected){
+    const ok=actual===expected;
+    if(!ok) pass=false;
+    console.log(`${ok?"✓":"✗"} ${label}: got ${actual}, expected ${expected}`);
+  }
+  // Level up 3 times with toughness 0
+  for(let i=0;i<3;i++){p.level++;p.hpMax=computeHpMax(p);p.hp=Math.min(p.hp,p.hpMax);}
+  check("hpMax after 3 level-ups (lv4, t0)",p.hpMax,115);
+  const hpBefore=p.hpMax;
+  // Increase toughness by 1
+  p.skills.toughness++;p.hpMax=computeHpMax(p);p.hp=Math.min(p.hp,p.hpMax);
+  check("hpMax after toughness +1 (lv4, t1)",p.hpMax,130);
+  check("hpMax did not drop",p.hpMax>=hpBefore,true);
+  check("hp <= hpMax",p.hp<=p.hpMax,true);
+  console.log(pass?"All hpMax tests passed.":"Some hpMax tests FAILED.");
 }
 
 // ---------------- Player ----------------
@@ -1940,7 +1966,7 @@ class Game{
         if(p.skillPoints>0 && p.skills[sk]<SkillDefs[sk].maxLvl){
           p.skills[sk]++;
           p.skillPoints--;
-          if(sk==="toughness") p.hpMax+=15;
+          if(sk==="toughness"){ p.hpMax=computeHpMax(p); p.hp=Math.min(p.hp,p.hpMax); }
           this.ui.showToast(`${SkillDefs[sk].name} upgraded to ${p.skills[sk]}`);
           this.renderSkillTree();
         }
@@ -2197,7 +2223,8 @@ class Game{
       this.player.xp-=xpForLevel;
       this.player.level++;
       this.player.skillPoints++;
-      this.player.hpMax+=5+this.player.skills.toughness*15;
+      this.player.hpMax=computeHpMax(this.player);
+      this.player.hp=Math.min(this.player.hp,this.player.hpMax);
       this.ui.showToast(`Level Up! Lv.${this.player.level} (+1 Skill Point)`,2.5);
     }
     if(!ud.lootDone){

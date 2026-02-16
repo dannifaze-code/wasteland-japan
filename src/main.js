@@ -306,7 +306,7 @@ function writeSave(save){ localStorage.setItem(SAVE_KEY, JSON.stringify({...save
 const ItemDB={
   stim:{id:"stim",name:"Field Stim",type:"consumable",weight:0.8,desc:"Restores 35 HP."},
   ration:{id:"ration",name:"Ration Pack",type:"consumable",weight:1.2,desc:"Restores 20 HP."},
-  radaway:{id:"radaway",name:"Rad-Away",type:"consumable",weight:0.6,desc:"Removes 30 radiation."},
+  radaway:{id:"radaway",name:"Rad-Away",type:"consumable",weight:0.6,desc:"Removes 20 radiation."},
   scrap:{id:"scrap",name:"Scrap Metal",type:"junk",weight:2.0,desc:"Old world leftovers."},
   cloth:{id:"cloth",name:"Tattered Cloth",type:"junk",weight:0.5,desc:"Useful for crafting."},
   circuits:{id:"circuits",name:"Circuit Board",type:"junk",weight:0.8,desc:"Pre-war electronics."},
@@ -944,8 +944,10 @@ class Player{
     // Deep systems
     this.radiation=0; this.radiationMax=100;
     this.armor=0;
+    this.armorEquipped=null; // itemId or null
     this.xp=0; this.level=1; this.skillPoints=0;
     this.skills={toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0};
+    this._lastRadThreshold=0; // for toast tracking
 
     // Third-person model
     this.model=this._buildModel();
@@ -1102,6 +1104,17 @@ class Player{
     return g;
   }
   weight(){return invWeight(this.inv);}
+  effectiveMaxHP(){
+    // Radiation reduces max HP: at 100 rad => -50%. Floor at 35% of base hpMax.
+    const factor=1-this.radiation*0.005;
+    return Math.max(this.hpMax*0.35, Math.round(this.hpMax*factor));
+  }
+  armorReduction(dmg){
+    // Armor reduces incoming damage: at 100 armor => 40% reduction. Clamp max 45%.
+    const totalArmor=this.armor+this.skills.mutantHide*5;
+    const reduction=clamp(totalArmor*0.006,0,0.45);
+    return Math.max(1, dmg*(1-reduction));
+  }
   setWeapon(i){
     this.equipped=clamp(i,0,WeaponDefs.length-1);
     this.weapon=WeaponDefs[this.equipped];
@@ -1142,7 +1155,7 @@ class Player{
   toSave(){
     return {pos:{x:this.pos.x,y:this.pos.y,z:this.pos.z},yaw:this.yaw,pitch:this.pitch,hp:this.hp,stamina:this.stamina,inVault:this.inVault,
       equipped:this.equipped,ammo:{...this.reserve},mags:{...this.mag},inv:JSON.parse(JSON.stringify(this.inv)),maxWeight:this.maxWeight,
-      radiation:this.radiation,armor:this.armor,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
+      radiation:this.radiation,armor:this.armor,armorEquipped:this.armorEquipped,xp:this.xp,level:this.level,skillPoints:this.skillPoints,skills:{...this.skills}};
   }
   fromSave(s){
     this.pos.set(s.pos.x,s.pos.y,s.pos.z);
@@ -1155,6 +1168,7 @@ class Player{
     this.maxWeight=s.maxWeight||55;
     this.radiation=s.radiation||0;
     this.armor=s.armor||0;
+    this.armorEquipped=s.armorEquipped||null;
     this.xp=s.xp||0;
     this.level=s.level||1;
     this.skillPoints=s.skillPoints||0;
@@ -1237,12 +1251,27 @@ class Player{
       if(this.muzzleFlashTimer<=0) this.muzzleFlash.visible=false;
     }
 
-    // Radiation outside vault
+    // Radiation sources (proximity-based)
     if(!this.inVault){
-      this.radiation=Math.min(this.radiationMax,this.radiation+1.2*dt);
-      if(this.radiation>60) this.hp=Math.max(0,this.hp-4*dt);
+      let radGain=0;
+      // Check nearby POIs for radiation via env callback
+      if(env.getRadiationAtPos) radGain+=env.getRadiationAtPos(this.pos);
+      this.radiation=Math.min(this.radiationMax,this.radiation+radGain*dt);
+      // Radiation threshold toasts
+      const thresholds=[25,50,75];
+      for(const th of thresholds){
+        if(this.radiation>=th && this._lastRadThreshold<th){
+          this._lastRadThreshold=th;
+          if(env.showToast) env.showToast(`Radiation rising… (${Math.round(this.radiation)} RAD)`);
+        }
+      }
+      if(this.radiation<this._lastRadThreshold) this._lastRadThreshold=Math.floor(this.radiation/25)*25;
+      // Clamp HP to effectiveMaxHP
+      const effMax=this.effectiveMaxHP();
+      if(this.hp>effMax) this.hp=effMax;
     }else{
       this.radiation=Math.max(0,this.radiation-3*dt);
+      if(this.radiation<this._lastRadThreshold) this._lastRadThreshold=Math.floor(this.radiation/25)*25;
     }
 
     // ADS (aim-down-sights) — smooth in, instant out
@@ -1937,12 +1966,14 @@ class Game{
       this.ui.invList.appendChild(row);
     });
 
+    const effMax=this.player.effectiveMaxHP();
+    const totalArmor=this.player.armor+this.player.skills.mutantHide*5;
     this.ui.panel.innerHTML=`
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Status</div>
-      <div class="k">HP: ${Math.round(this.player.hp)} / ${this.player.hpMax}</div>
+      <div class="k">HP: ${Math.round(this.player.hp)} / ${effMax}${effMax<this.player.hpMax?` (base ${this.player.hpMax})`:""}</div>
       <div class="k">Stamina: ${Math.round(this.player.stamina)} / ${this.player.staminaMax}</div>
       <div class="k">Radiation: ${Math.round(this.player.radiation)} / ${this.player.radiationMax}</div>
-      <div class="k">Armor: ${this.player.armor}</div>
+      <div class="k">Armor: ${totalArmor}</div>
       <div class="k">Level: ${this.player.level} (XP: ${this.player.xp}/${this.player.level*100})</div>
       <div style="height:10px"></div>
       <div style="font-weight:950;font-size:14px;margin-bottom:8px">Ammo</div>
@@ -1959,9 +1990,9 @@ class Game{
   useItem(idx){
     const it=this.player.inv[idx]; if(!it) return;
     const def=ItemDB[it.id];
-    if(it.id==="stim"){ this.player.hp=clamp(this.player.hp+35,0,this.player.hpMax); this.ui.showToast("Used Field Stim (+35 HP)"); }
-    else if(it.id==="ration"){ this.player.hp=clamp(this.player.hp+20,0,this.player.hpMax); this.ui.showToast("Ate Ration Pack (+20 HP)"); }
-    else if(it.id==="radaway"){ this.player.radiation=Math.max(0,this.player.radiation-30); this.ui.showToast("Used Rad-Away (-30 RAD)"); }
+    if(it.id==="stim"){ const effMax=this.player.effectiveMaxHP(); this.player.hp=clamp(this.player.hp+35,0,effMax); this.ui.showToast("Used Field Stim (+35 HP)"); }
+    else if(it.id==="ration"){ const effMax=this.player.effectiveMaxHP(); this.player.hp=clamp(this.player.hp+20,0,effMax); this.ui.showToast("Ate Ration Pack (+20 HP)"); }
+    else if(it.id==="radaway"){ this.player.radiation=Math.max(0,this.player.radiation-20); this.ui.showToast("Used Rad-Away (-20 RAD)"); }
     else if(def?.type==="armor"){
       const bonus=it.id==="vest"?10:it.id==="plating"?20:5;
       this.player.armor+=bonus;
@@ -2210,7 +2241,17 @@ class Game{
           const roll=Math.random();
           if(roll<0.35) this.spawnLoot(t.position.clone(),{id:"scrap",qty:Math.floor(1+Math.random()*3)});
           else if(roll<0.65) this.spawnLoot(t.position.clone(),{id:"ration",qty:1});
-          else this.spawnLoot(t.position.clone(),{id:"stim",qty:1});
+          else if(roll<0.85) this.spawnLoot(t.position.clone(),{id:"stim",qty:1});
+          else this.spawnLoot(t.position.clone(),{id:"radaway",qty:1});
+          // Tainted container: deterministic chance based on lockId or name hash
+          if(!this.player.inVault){
+            const taintSeed=(ud.lockId||ud.name||"crate").split("").reduce((a,c)=>a+c.charCodeAt(0),0);
+            if(taintSeed%5===0){
+              const radBurst=8+Math.floor(taintSeed%12);
+              this.player.radiation=Math.min(this.player.radiationMax,this.player.radiation+radBurst);
+              this.ui.showToast(`Tainted! (+${radBurst} RAD)`,2.0);
+            }
+          }
           this.ui.showToast(`${ud.name} opened.`);
           this.audio.hit();
         }
@@ -2222,7 +2263,7 @@ class Game{
       }else if(ud.kind==="vaultEntryDoor"){
         this.enterVault();
       }else if(ud.kind==="restPoint"){
-        this.player.hp=this.player.hpMax;
+        this.player.hp=this.player.effectiveMaxHP();
         this.player.stamina=this.player.staminaMax;
         this.doSave();
         this.ui.showToast("Rested. Saved.",2.5);
@@ -2476,6 +2517,8 @@ class Game{
 
       if(s.position.distanceTo(this.player.pos)<0.8){
         this.damagePlayer(8);
+        // Stalker spit adds small radiation burst
+        this.player.radiation=Math.min(this.player.radiationMax,this.player.radiation+3);
         this.particles.spawn(s.position.clone(),v3(rand(-2,2),2,rand(-2,2)),0.25,0.06);
         this.scene.remove(s);
         this._spit.splice(i,1);
@@ -2491,8 +2534,7 @@ class Game{
 
   damagePlayer(amount){
     if(this.mode!=="play") return;
-    const totalArmor=this.player.armor+this.player.skills.mutantHide*5;
-    const reduced=Math.max(1,amount-totalArmor*0.3);
+    const reduced=this.player.armorReduction(amount);
     this.player.hp=Math.max(0,this.player.hp-reduced);
     this.audio.hurt();
     this.shakeKick(0.12);
@@ -2502,7 +2544,7 @@ class Game{
 
   onPlayerDead(){
     this.ui.showToast("You fell. The wasteland keeps what it takes.",2.8);
-    this.player.hp=this.player.hpMax;
+    this.player.hp=this.player.effectiveMaxHP();
     this.player.stamina=this.player.staminaMax;
     this.player.inVault=true;
     this.vault.setVisible(true);
@@ -2544,12 +2586,13 @@ class Game{
   // HUD
   renderHUD(){
     const p=this.player;
-    this.ui.hpFill.style.width=`${(p.hp/p.hpMax)*100}%`;
+    const effMax=p.effectiveMaxHP();
+    this.ui.hpFill.style.width=`${(p.hp/effMax)*100}%`;
     this.ui.stFill.style.width=`${(p.stamina/p.staminaMax)*100}%`;
     this.ui.radFill.style.width=`${(p.radiation/p.radiationMax)*100}%`;
     const xpForLevel=p.level*100;
     this.ui.xpFill.style.width=`${(p.xp/xpForLevel)*100}%`;
-    this.ui.armorLbl.textContent=`Armor: ${p.armor}  Lv.${p.level}${p.skillPoints>0?" ["+p.skillPoints+" SP]":""}`;
+    this.ui.armorLbl.textContent=`Armor: ${p.armor+p.skills.mutantHide*5}  Lv.${p.level}${p.skillPoints>0?" ["+p.skillPoints+" SP]":""}`;
 
     const w=p.weapon, id=w.id;
     this.ui.ammo.querySelector(".small").textContent=w.name;
@@ -2566,6 +2609,8 @@ class Game{
     // Radiation warning flash
     if(p.radiation>60){
       this.ui.radFill.style.background=`rgba(255,${Math.floor(100-p.radiation)},50,.85)`;
+    }else if(p.radiation>25){
+      this.ui.radFill.style.background=`rgba(200,255,50,.75)`;
     }else{
       this.ui.radFill.style.background="rgba(100,255,50,.75)";
     }
@@ -2596,6 +2641,32 @@ class Game{
     }
     return false;
   }
+
+  /** Returns radiation gain per second at a world position based on nearby POI sources */
+  getRadiationAtPos(pos){
+    let rad=0;
+    // Base ambient wasteland radiation (very low)
+    if(!this.player.inVault) rad+=0.3;
+    // Industrial stacks (Coastal Works POI): high radiation within 30m
+    // Rail station wreckage: moderate radiation within 25m
+    for(const [,tile] of this.world.tiles){
+      tile.g.traverse(child=>{
+        if(!child.userData?.poi) return;
+        const wp=new THREE.Vector3();
+        child.getWorldPosition(wp);
+        const dx=pos.x-wp.x, dz=pos.z-wp.z;
+        const distSq=dx*dx+dz*dz;
+        if(child.userData.poi==="Coastal Works" && distSq<900){ // within 30m
+          rad+=3.0*(1-Math.sqrt(distSq)/30);
+        }else if((child.userData.poi==="Collapsed Rail Station"||child.userData.poi==="Destroyed Railway") && distSq<625){ // within 25m
+          rad+=1.8*(1-Math.sqrt(distSq)/25);
+        }
+      });
+    }
+    return rad;
+  }
+
+  showToast(msg,dur){this.ui.showToast(msg,dur);}
 
   async loop(){
     requestAnimationFrame(()=>this.loop());
@@ -2848,7 +2919,7 @@ class Game{
 
     // regen only when safe outside
     if(!this.player.inVault && !this.anyEnemyNear(14)){
-      this.player.hp=Math.min(this.player.hpMax,this.player.hp+3.5*dt);
+      this.player.hp=Math.min(this.player.effectiveMaxHP(),this.player.hp+3.5*dt);
     }
 
     this.renderHUD();

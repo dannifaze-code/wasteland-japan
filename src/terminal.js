@@ -32,10 +32,23 @@ export const TerminalDefs = {
       { title: "ENTRY 001 — VAULT STATUS", body: "Vault 811 systems nominal. Population: 47 active residents. Surface clearance protocol remains in effect. All exits require Overseer authorization." },
       { title: "ENTRY 002 — SURFACE REPORT", body: "Recon teams report elevated radiation north of the vault. Crawler nests confirmed in sectors 3–7. Recommend armed escort for all surface excursions." },
       { title: "ENTRY 003 — CLASSIFIED", body: "< REDACTED — OVERSEER EYES ONLY > \nProtocol 9 remains active. Do not discuss surface clearance criteria with residents. The 'restoration timeline' narrative must hold." },
-      { title: "ENTRY 004 — ARMORY NOTE", body: "Armory locker combination reset. Standard security lock (Average difficulty) applied. Contact security chief for access override." }
+      { title: "ENTRY 004 — ARMORY NOTE", body: "Armory locker combination reset. Standard security lock (Average difficulty) applied. Contact security chief for access override." },
+      { title: "ENTRY 005 — RADIATION ADVISORY", body: "WARNING: Elevated radiation pockets detected near industrial stacks (Coastal Works) and collapsed rail stations. Avoid prolonged exposure. Rad-Away supplies available from Medic Yuki. Stalker spit carries trace radioactive material." }
     ],
     actions: [
       { label: "[Unlock Armory Locker]", kind: "unlock", targetLockId: "armory_locker", displayName: "Armory Locker", doneFlag: "unlocked:armory_locker" },
+    ]
+  },
+  rail_service_terminal: {
+    id: "rail_service_terminal",
+    title: "RAIL SERVICE — MAINTENANCE TERMINAL",
+    logs: [
+      { title: "LOG 001 — SERVICE NOTICE", body: "Rail service tunnels sealed per emergency protocol. Residual radiation in maintenance corridors. Exercise caution." },
+      { title: "LOG 002 — SUPPLY CACHE", body: "Emergency supply cache stored in service room B-2. Access restricted to authorized personnel. Lock override available via this terminal." },
+      { title: "LOG 003 — RADIATION NOTE", body: "Radiation levels inside service tunnels are lower than surface. Tunnels may provide safe passage — if you can get in." }
+    ],
+    actions: [
+      { label: "[Unlock Rail Service Room]", kind: "unlock", targetLockId: "rail_service_door", displayName: "Rail Service Room Door", doneFlag: "unlocked:rail_service_door" },
     ]
   }
 };

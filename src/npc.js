@@ -65,6 +65,37 @@ export const NPCDefs = [
   }
 ];
 
+// ---- Outside NPC Definitions ----
+export const OutsideNPCDefs = [
+  {
+    id: "warden_aoi",
+    displayName: "Warden Aoi",
+    faction: "Wardens",
+    role: "questgiver",
+    position: { x: 15, y: 0, z: 210 }, // at outpost center
+    bodyColor: 0x2a4a2a,
+    accentColor: 0x88cc44,
+    height: 1.75,
+    interactDistance: 2.5,
+    wander: false,
+    dialogueId: "warden_aoi"
+  },
+  {
+    id: "broker_jiro",
+    displayName: "Broker Jiro",
+    faction: "Rail Ghost Union",
+    role: "vendor",
+    position: { x: -80, y: 0, z: 15 }, // near rail station center
+    bodyColor: 0x3a3a4a,
+    accentColor: 0x44aacc,
+    height: 1.8,
+    interactDistance: 2.5,
+    wander: true,
+    wanderRadius: 2,
+    dialogueId: "broker_jiro"
+  }
+];
+
 // ---- NPC Mesh Builder ----
 function buildNPCMesh(def) {
   const g = new THREE.Group();
@@ -158,8 +189,12 @@ export class NPCManager {
   constructor(scene) {
     this.scene = scene;
     this.group = new THREE.Group();
+    this.outsideGroup = new THREE.Group();
     scene.add(this.group);
+    scene.add(this.outsideGroup);
     this.npcs = [];
+    this.outsideNPCs = [];
+    this._outsideSpawned = false;
   }
 
   spawnVaultNPCs() {
@@ -170,9 +205,20 @@ export class NPCManager {
     }
   }
 
-  /** Update idle sway, wander, quest markers */
-  update(dt, playerPos, inDialogueWith) {
-    for (const npc of this.npcs) {
+  /** Spawn outside NPCs (Warden Aoi, Broker Jiro). Safe to call multiple times — only spawns once. */
+  spawnOutsideNPCs() {
+    if (this._outsideSpawned) return;
+    this._outsideSpawned = true;
+    for (const def of OutsideNPCDefs) {
+      const mesh = buildNPCMesh(def);
+      this.outsideGroup.add(mesh);
+      this.outsideNPCs.push(mesh);
+    }
+  }
+
+  /** Update idle sway, wander, quest markers for a list of NPCs */
+  _updateList(list, dt, playerPos) {
+    for (const npc of list) {
       const ud = npc.userData;
 
       // Idle sway (subtle body rotation)
@@ -229,12 +275,28 @@ export class NPCManager {
     }
   }
 
-  /** Get NPC mesh by id */
+  /** Update idle sway, wander, quest markers */
+  update(dt, playerPos, inDialogueWith) {
+    this._updateList(this.npcs, dt, playerPos);
+  }
+
+  /** Update outside NPCs separately (called when player is outside) */
+  updateOutside(dt, playerPos) {
+    this._updateList(this.outsideNPCs, dt, playerPos);
+  }
+
+  /** Get NPC mesh by id (searches both vault and outside) */
   getById(id) {
-    return this.npcs.find(n => n.userData.npcId === id) || null;
+    return this.npcs.find(n => n.userData.npcId === id)
+      || this.outsideNPCs.find(n => n.userData.npcId === id)
+      || null;
   }
 
   setVisible(v) {
     this.group.visible = v;
+  }
+
+  setOutsideVisible(v) {
+    this.outsideGroup.visible = v;
   }
 }

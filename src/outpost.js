@@ -8,6 +8,8 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.m
 export const OUTPOST_CENTER = new THREE.Vector3(15, 0, 2 * 90 + 30); // x=15, z=210
 export const OUTPOST_SAFE_RADIUS = 35;
 export const OUTPOST_DISCOVER_RADIUS = 45;
+export const OUTPOST_KILL_RADIUS = 60;
+export const SAFE_ZONE_CHECK_INTERVAL = 3.0;
 
 // Rail station deterministic reference — city biome tile (1,0) center area
 export const RAIL_STATION_CENTER = new THREE.Vector3(-1 * 90 + 10, 0, 0 * 90 + 15);

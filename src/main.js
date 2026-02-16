@@ -7,7 +7,7 @@ import { NPCManager } from "./npc.js";
 import { DialogueController } from "./dialogue.js";
 import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
 import { Quest } from "./quest.js";
-import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
+import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -2138,7 +2138,7 @@ class Game{
     // Track kills for Q5 "Cleanse the Path" (kills near outpost)
     if(this.questSys.getFlag("q5_branch")==="cleanse" && this.questSys.getStage("q5_outpost_accord")===20){
       const dx=root.position.x-OUTPOST_CENTER.x, dz=root.position.z-OUTPOST_CENTER.z;
-      if(dx*dx+dz*dz<60*60){ // within 60m of outpost
+      if(dx*dx+dz*dz<OUTPOST_KILL_RADIUS*OUTPOST_KILL_RADIUS){ // within kill tracking radius of outpost
         this.questSys.incFlag("q5_killCount",1);
         const kills=this.questSys.getFlag("q5_killCount");
         if(kills>=3){
@@ -2665,7 +2665,7 @@ class Game{
 
       // --- Safe zone enforcement (every 3 seconds, not every frame) ---
       this._safeZoneTimer=(this._safeZoneTimer||0)+dt;
-      if(this._safeZoneTimer>3.0){
+      if(this._safeZoneTimer>SAFE_ZONE_CHECK_INTERVAL){
         this._safeZoneTimer=0;
         enforceSafeZone(this.world.enemies);
       }

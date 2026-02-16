@@ -3,6 +3,9 @@
 // Runs best from a local server (ES modules).
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
+import { NPCManager } from "./npc.js";
+import { DialogueController } from "./dialogue.js";
+import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -94,6 +97,7 @@ function makeUI(){
     .pipboy-content .panel{border-color:rgba(80,255,80,.2)}
     .pipboy-content .actions .chip{color:#33ff66}
     .pipboy-scanline{pointer-events:none;position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);border-radius:10px}
+    ${DIALOGUE_CSS}
   `;
   const hud=el("div","hud",root);
 
@@ -154,6 +158,8 @@ function makeUI(){
   const pipContent=el("div","pipboy-content",pipboy);
   el("div","pipboy-scanline",pipboy);
 
+  const dlg=buildDialogueUI(root);
+
   const wm=el("div","wm",hud); wm.textContent="Wasteland Japan — Vault 811";
 
   function showToast(msg, sec=2.2){
@@ -162,7 +168,7 @@ function makeUI(){
     showToast._t=setTimeout(()=>toast.classList.remove("on"), sec*1000);
   }
 
-  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent};
+  return {root,hud,hpFill,stFill,radFill,xpFill,armorLbl,comp,ammo,hint,obj,toast,showToast,scrim,menuTitle:h1,menuDesc:p,btns,inv,invTitle,invSub,invList,panel,invClose,cut,cutT,cutB,cutS,enemybar,ebFill,enemyname,skillTree,craftPanel,pipboy,pipTabs,pipTabBtns,pipContent,dlg};
 }
 
 // ---------------- Audio (simple synth) ----------------
@@ -1355,7 +1361,11 @@ class Game{
     this.vault=new Vault(this.scene);
     this.world=new World(this.scene,this.save.world.seed);
 
-    this.mode="title"; // title intro play pause inventory skills crafting pipboy
+    this.npcMgr=new NPCManager(this.scene);
+    this.npcMgr.spawnVaultNPCs();
+    this.dialogueCtrl=new DialogueController();
+
+    this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue
     this.autoFire=false;
     this.shake={amp:0,t:0};
     this.pipboyTab="stat";
@@ -1447,7 +1457,9 @@ class Game{
     this.mode="title";
     this.ui.inv.style.display="none";
     this.ui.cut.style.display="none";
+    this.ui.dlg.panel.style.display="none";
     this.vault.setVisible(true);
+    this.npcMgr.setVisible(true);
     this.audio.stopAmbient?.();
     const buttons=[
       {label:"New Game", onClick:()=>this.startNewGame()},
@@ -1482,6 +1494,7 @@ class Game{
     this.ui.inv.style.display="none";
     this.ui.cut.style.display="none";
     this.ui.pipboy.style.display="none";
+    this.ui.dlg.panel.style.display="none";
     this.player.pipboyActive=false;
   }
 
@@ -2026,6 +2039,7 @@ class Game{
     add(this.vault.group);
     add(this.world.enemies);
     add(this.world.interact);
+    add(this.npcMgr.group);
     for(const l of this._loots) add(l);
     const hits=rc.intersectObjects(meshes,true);
     if(!hits.length) return null;
@@ -2036,8 +2050,8 @@ class Game{
   findRoot(obj){
     let o=obj;
     while(o && o.parent && o.parent!==this.scene){
-      if(o.userData.enemy||o.userData.loot||o.userData.interact) return o;
-      if(o.parent.userData.enemy||o.parent.userData.loot||o.parent.userData.interact) return o.parent;
+      if(o.userData.enemy||o.userData.loot||o.userData.interact||o.userData.npc) return o;
+      if(o.parent.userData.enemy||o.parent.userData.loot||o.parent.userData.interact||o.parent.userData.npc) return o.parent;
       o=o.parent;
     }
     return obj;
@@ -2112,6 +2126,14 @@ class Game{
       this.ui.hint.textContent=`E: Pick up ${t.userData.name}`;
       this.player.interactTarget=t; return;
     }
+    if(t?.userData?.npc){
+      const dist=this.player.pos.distanceTo(t.position);
+      if(dist<=t.userData.interactDistance){
+        this.ui.hint.style.display="block";
+        this.ui.hint.textContent=`E: Talk to ${t.userData.displayName}`;
+        this.player.interactTarget=t; return;
+      }
+    }
     if(t?.userData?.interact){
       this.ui.hint.style.display="block";
       this.ui.hint.textContent=`E: ${(t.userData.kind==="vaultDoor")?"Open":"Use"} ${t.userData.name||"Object"}`;
@@ -2123,6 +2145,10 @@ class Game{
   doInteract(){
     const t=this.player.interactTarget; if(!t) return;
     const ud=t.userData;
+    if(ud.npc){
+      this.startDialogue(ud.npcId, ud);
+      return;
+    }
     if(ud.loot){
       const item=ud.item;
       const def=ItemDB[item.id];
@@ -2156,6 +2182,52 @@ class Game{
         this.exitVault();
       }
     }
+  }
+
+  startDialogue(npcId, npcData){
+    const node=this.dialogueCtrl.start(npcId);
+    if(!node){ this.ui.showToast("..."); return; }
+    this.mode="dialogue";
+    this._dialogueNpcData=npcData;
+    // Mark NPC as in-dialogue so it faces the player
+    const npcMesh=this.npcMgr.getById(npcId);
+    if(npcMesh) npcMesh.userData._inDialogue=true;
+    this.ui.hint.style.display="none";
+    this.audio.click();
+    renderDialogueNode(this.ui.dlg, node, npcData, this.player, (idx)=>this._onDialogueChoice(idx));
+  }
+
+  _onDialogueChoice(idx){
+    if(!this.dialogueCtrl.active||!this.dialogueCtrl.currentNode) return;
+    const choices=this.dialogueCtrl.currentNode.choices;
+    if(idx<0||idx>=choices.length) return;
+    // Skip disabled (failed condition) choices
+    const choice=choices[idx];
+    if(choice.condition && !choice.condition(this.player)) return;
+    const next=this.dialogueCtrl.pick(idx, this.player, this);
+    if(!next){
+      this.closeDialogue();
+      return;
+    }
+    this.audio.click();
+    renderDialogueNode(this.ui.dlg, next, this._dialogueNpcData, this.player, (i)=>this._onDialogueChoice(i));
+  }
+
+  closeDialogue(){
+    this.ui.dlg.panel.style.display="none";
+    // Unmark NPC dialogue state
+    if(this.dialogueCtrl.currentNpcId){
+      const npcMesh=this.npcMgr.getById(this.dialogueCtrl.currentNpcId);
+      if(npcMesh) npcMesh.userData._inDialogue=false;
+    }
+    // Also clear by stored id in case ctrl already ended
+    if(this._dialogueNpcData?.npcId){
+      const npcMesh=this.npcMgr.getById(this._dialogueNpcData.npcId);
+      if(npcMesh) npcMesh.userData._inDialogue=false;
+    }
+    this.dialogueCtrl.end();
+    this._dialogueNpcData=null;
+    this.mode="play";
   }
 
   exitVault(){
@@ -2399,6 +2471,7 @@ class Game{
     // global hotkeys
     if(this.input.pressed("Escape")){
       if(this.mode==="play") this.showPause();
+      else if(this.mode==="dialogue") this.closeDialogue();
       else if(this.mode==="pipboy") this.closePipboy();
       else if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){ this.resume(); this.ui.inv.style.display="none"; this.ui.skillTree.style.display="none"; this.ui.craftPanel.style.display="none"; }
       else if(this.mode==="intro") this.endIntro();
@@ -2423,6 +2496,16 @@ class Game{
       if(this.input.pressed("KeyJ")) this.openPipboy("craft");
 
       if(this.autoFire && this.player.weapon.fireMode==="auto") this.player.tryFire(this);
+    }
+
+    // Dialogue mode: number keys to pick choices
+    if(this.mode==="dialogue"){
+      for(let i=1;i<=9;i++){
+        if(this.input.pressed("Digit"+i)){
+          this._onDialogueChoice(i-1);
+          break;
+        }
+      }
     }
 
     // mode-specific updates
@@ -2457,11 +2540,19 @@ class Game{
       this.renderer.render(this.scene,this.camera);
       return;
     }
+    if(this.mode==="dialogue"){
+      this.updateTime(dt);
+      this.npcMgr.update(dt, this.player.pos, this.dialogueCtrl.currentNpcId);
+      this.renderHUD();
+      this.renderer.render(this.scene,this.camera);
+      return;
+    }
 
     // PLAY update
     this.updateTime(dt);
     this.player.update(dt,this.input,this);
     this.vault.setVisible(this.player.inVault);
+    this.npcMgr.setVisible(this.player.inVault);
 
     if(!this.player.inVault){
       this.world.update(this.player.pos);
@@ -2488,6 +2579,7 @@ class Game{
     }
 
     this.updateInteract();
+    if(this.player.inVault) this.npcMgr.update(dt, this.player.pos, null);
     if(!this.player.inVault) this.updateEnemies(dt);
     this.updateSpit(dt);
     this.particles.update(dt);

@@ -1503,6 +1503,7 @@ class Game{
 
     // Debug teleport index
     this._debugTeleportIdx=0;
+    this._outpostGrounded=false;
 
     this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue dungeon
     this.autoFire=false;

@@ -31,6 +31,7 @@ export class Worldspace {
 
     // Radiation zones tracked by world position
     this._radZones = [];
+    this._pollId = null;
 
     this._load(poiUrl);
   }
@@ -52,14 +53,15 @@ export class Worldspace {
       this._placeAll();
     } else {
       let attempts = 0;
-      const id = setInterval(() => {
+      this._pollId = setInterval(() => {
         attempts++;
         if (this.terrain.ready) {
-          clearInterval(id);
+          clearInterval(this._pollId);
+          this._pollId = null;
           this._placeAll();
         } else if (attempts > 100) {
-          // Give up after ~10 seconds to avoid infinite polling
-          clearInterval(id);
+          clearInterval(this._pollId);
+          this._pollId = null;
           console.warn("Worldspace: terrain not ready after timeout, placing at y=0");
           this._placeAll();
         }

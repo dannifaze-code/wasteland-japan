@@ -6,6 +6,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.m
 export const MAP_SIZE = 900;
 export const MAP_HALF = MAP_SIZE / 2;
 export const HEIGHT_SCALE = 38;
+const SEGMENTS = 192;
 
 export class HeightmapTerrain {
   /**
@@ -53,7 +54,7 @@ export class HeightmapTerrain {
   }
 
   _buildMesh() {
-    const segments = 192;
+    const segments = SEGMENTS;
     const geom = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, segments, segments);
     // Rotate to XZ plane (default PlaneGeometry is in XY)
     geom.rotateX(-Math.PI / 2);

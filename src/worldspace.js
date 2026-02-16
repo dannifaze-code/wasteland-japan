@@ -109,6 +109,10 @@ export class Worldspace {
         this._placeDungeonDoor(poi, x, y, z);
         break;
 
+      case "iron_shack":
+        this._placeIronShack(poi, x, y, z);
+        break;
+
       case "poi":
       default:
         this._placeGenericPOI(poi, x, y, z);
@@ -209,6 +213,33 @@ export class Worldspace {
     g.userData.poi = poi.name;
     this.poiGroup.add(g);
     this._addDebugMarker(poi, x, y, z, 0xaa55ff);
+  }
+
+  _placeIronShack(poi, x, y, z) {
+    const g = new THREE.Group();
+    const matIron = new THREE.MeshStandardMaterial({ color: 0x6b5b4f, roughness: 0.85, metalness: 0.35 });
+    const matRust = new THREE.MeshStandardMaterial({ color: 0x5d3b2a, roughness: 1.0, metalness: 0.1 });
+    // Main shack body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 4), matIron);
+    body.position.y = 1.5;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    g.add(body);
+    // Corrugated roof (slightly angled)
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.2, 4.6), matRust);
+    roof.position.set(0, 3.2, 0);
+    roof.rotation.z = 0.08;
+    roof.castShadow = true;
+    g.add(roof);
+    // Door opening
+    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.15), matRust);
+    doorFrame.position.set(0, 1.1, 2.05);
+    g.add(doorFrame);
+    g.position.set(x, y, z);
+    g.userData.poi = poi.name;
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    this.poiGroup.add(g);
+    this._addDebugMarker(poi, x, y, z, 0x8b6914);
   }
 
   _placeGenericPOI(poi, x, y, z) {

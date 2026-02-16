@@ -543,7 +543,7 @@ export class FactionWorld {
         unit.position.y = terrain.sampleHeight(wx, wz);
       }
 
-      unit.userData.patrolOrigin = new THREE.Vector3(wx, 0, wz);
+      unit.userData.patrolOrigin = new THREE.Vector3(wx, unit.position.y, wz);
       unit.userData.patrolAngle = angle;
       unit.userData.ambushSquad = true;
 

@@ -53,7 +53,7 @@ export function buildDialogueUI(uiRoot) {
 }
 
 // ---- Render a dialogue node into the UI ----
-export function renderDialogueNode(ui, node, npcData, player, onChoicePick) {
+export function renderDialogueNode(ui, node, npcData, player, onChoicePick, game) {
   if (!node) {
     ui.panel.style.display = "none";
     return;
@@ -73,7 +73,7 @@ export function renderDialogueNode(ui, node, npcData, player, onChoicePick) {
     let passesCheck = true;
 
     if (choice.condition) {
-      passesCheck = choice.condition(player);
+      passesCheck = choice.condition(player, game);
       if (passesCheck) {
         label += `<span class="skill-tag">${choice.conditionLabel || "[Check]"}</span>`;
       } else {

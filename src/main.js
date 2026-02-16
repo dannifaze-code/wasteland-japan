@@ -494,8 +494,8 @@ class World{
       g.add(path);
     }
 
-    // instanced grass
-    const grassCount=biome===0?80:180;
+    // instanced grass (reduced counts for performance)
+    const grassCount=biome===0?50:120;
     const instGrass=new THREE.InstancedMesh(this.grassGeom,this.grassMat,grassCount);
     const dummy=new THREE.Object3D();
     for(let i=0;i<grassCount;i++){
@@ -514,7 +514,7 @@ class World{
     g.add(instGrass);
 
     // rocks
-    const rockCount=biome===2?18:12;
+    const rockCount=biome===2?12:8;
     const instRocks=new THREE.InstancedMesh(this.rockGeom,this.rockMat,rockCount);
     for(let i=0;i<rockCount;i++){
       const px=(rng()-0.5)*this.tileSize;
@@ -608,6 +608,12 @@ class World{
     const t=this.tiles.get(k); if(!t) return;
     for(const c of t.interactables) this.interact.remove(c);
     for(const e of t.enemies) this.enemies.remove(e);
+    // Dispose geometries and materials to free GPU memory
+    t.g.traverse(o=>{
+      if(o.isMesh){
+        if(o.geometry && !o.geometry._shared) o.geometry.dispose();
+      }
+    });
     this.static.remove(t.g);
     this.tiles.delete(k);
   }
@@ -1403,8 +1409,8 @@ class Game{
   constructor(){
     this.ui=makeUI();
 
-    this.renderer=new THREE.WebGLRenderer({antialias:true});
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
     this.renderer.setSize(innerWidth,innerHeight);
     this.renderer.shadowMap.enabled=true;
     this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -1414,7 +1420,7 @@ class Game{
     this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
     this.fov=70;
-    this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.05,700);
+    this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.1,500);
     this.scene.add(this.camera);
 
     this.clock=new THREE.Clock();
@@ -1486,7 +1492,7 @@ class Game{
     this.sun.position.set(50,70,20);
     this.sun.castShadow=true;
     this.sun.shadow.mapSize.set(1024,1024);
-    Object.assign(this.sun.shadow.camera,{near:1,far:200,left:-80,right:80,top:80,bottom:-80});
+    Object.assign(this.sun.shadow.camera,{near:1,far:150,left:-60,right:60,top:60,bottom:-60});
     this.scene.add(this.sun);
 
     // Hemisphere light for better ambient variation
@@ -1499,7 +1505,7 @@ class Game{
   }
 
   _makeSky(){
-    const geo=new THREE.SphereGeometry(500,20,16);
+    const geo=new THREE.SphereGeometry(450,16,12);
     const mat=new THREE.MeshBasicMaterial({color:0x0a0f17,side:THREE.BackSide});
     this.sky=new THREE.Mesh(geo,mat);
     this.scene.add(this.sky);
@@ -2108,8 +2114,12 @@ class Game{
     root.parent?.remove(root);
   }
 
-  // Interaction
+  // Interaction (throttled to reduce per-frame raycast cost)
+  _interactTimer=0;
   updateInteract(){
+    this._interactTimer-=1/60;
+    if(this._interactTimer>0 && this.player.interactTarget) return;
+    this._interactTimer=0.1; // check ~10 times per second
     this.player.interactTarget=null;
     const dir=this.getForward();
     const res=this.raycast(this.camera.position,dir,3.2);
@@ -2381,7 +2391,9 @@ class Game{
     this.ui.showToast("Entered Vault 811.",2.0);
   }
 
-  // Enemies AI
+  // Enemies AI — reusable vectors to reduce per-frame allocations
+  _enemyToP=new THREE.Vector3();
+  _enemyDir=new THREE.Vector3();
   updateEnemies(dt){
     const p=this.player.pos;
     for(const e of this.world.enemies.children){
@@ -2390,9 +2402,9 @@ class Game{
       ud.spitCd=Math.max(0,ud.spitCd-dt);
       ud.lastSeen+=dt;
 
-      const toP=p.clone().sub(e.position);
-      toP.y=0;
-      const dist=toP.length();
+      this._enemyToP.copy(p).sub(e.position);
+      this._enemyToP.y=0;
+      const dist=this._enemyToP.length();
       const sees=dist<22 && !this.player.inVault;
       if(sees){ ud.aggro=Math.min(1,ud.aggro+2.0*dt); ud.lastSeen=0; }
       else ud.aggro=Math.max(0,ud.aggro-0.35*dt);
@@ -2414,9 +2426,9 @@ class Game{
         e.position.addScaledVector(ud.wanderDir,wanderStep);
       }else{
         if(dist>1.2){
-          const dir=toP.clone().normalize();
+          this._enemyDir.copy(this._enemyToP).normalize();
           const chaseStep=Math.min(maxStepClamped,dist-1.0);
-          e.position.addScaledVector(dir,chaseStep);
+          e.position.addScaledVector(this._enemyDir,chaseStep);
         }
 
         if(ud.kind==="crawler"){
@@ -2428,7 +2440,7 @@ class Game{
       }
 
       if(dist>0.001){
-        const ang=Math.atan2(toP.x,toP.z);
+        const ang=Math.atan2(this._enemyToP.x,this._enemyToP.z);
         e.rotation.y=lerp(e.rotation.y,ang,6*dt);
       }
       e.position.y=0;

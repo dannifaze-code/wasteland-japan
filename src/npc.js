@@ -227,20 +227,22 @@ export class NPCManager {
         npc.rotation.y += Math.sin(ud._swayT) * 0.0008;
       }
 
-      // Quest marker bob
-      npc.traverse(c => {
-        if (c.userData._marker) {
-          c.position.y += Math.sin(ud._swayT * 2.5) * 0.0015;
-          c.rotation.y += dt * 1.8;
-        }
-      });
+      // Quest marker bob (cache marker reference to avoid per-frame traverse)
+      if (ud._markerRef === undefined) {
+        ud._markerRef = null;
+        npc.traverse(c => { if (c.userData._marker) ud._markerRef = c; });
+      }
+      if (ud._markerRef) {
+        ud._markerRef.position.y += Math.sin(ud._swayT * 2.5) * 0.0015;
+        ud._markerRef.rotation.y += dt * 1.8;
+      }
 
       // Face player when in dialogue
       if (ud._inDialogue) {
-        const toPlayer = playerPos.clone().sub(npc.position);
-        toPlayer.y = 0;
-        if (toPlayer.lengthSq() > 0.001) {
-          const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
+        const dx = playerPos.x - npc.position.x;
+        const dz = playerPos.z - npc.position.z;
+        if (dx * dx + dz * dz > 0.001) {
+          const targetYaw = Math.atan2(dx, dz);
           npc.rotation.y = lerp(npc.rotation.y, targetYaw, 8 * dt);
         }
         continue; // skip wander while talking
@@ -254,11 +256,13 @@ export class NPCManager {
           const a = Math.random() * Math.PI * 2;
           ud._wanderDir.set(Math.cos(a), 0, Math.sin(a));
         }
-        const next = npc.position.clone().addScaledVector(ud._wanderDir, ud._wanderSpeed * dt);
-        const distFromOrigin = next.clone().sub(ud._wanderOrigin);
-        distFromOrigin.y = 0;
-        if (distFromOrigin.length() < ud._wanderRadius) {
-          npc.position.copy(next);
+        const nx = npc.position.x + ud._wanderDir.x * ud._wanderSpeed * dt;
+        const nz = npc.position.z + ud._wanderDir.z * ud._wanderSpeed * dt;
+        const ox = nx - ud._wanderOrigin.x;
+        const oz = nz - ud._wanderOrigin.z;
+        if (ox * ox + oz * oz < ud._wanderRadius * ud._wanderRadius) {
+          npc.position.x = nx;
+          npc.position.z = nz;
         } else {
           // Reverse direction
           ud._wanderDir.negate();

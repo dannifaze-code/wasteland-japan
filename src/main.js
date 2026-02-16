@@ -2445,6 +2445,7 @@ class Game{
     const deg=Math.round(yaw*180/Math.PI);
     this.ui.comp.textContent=`Heading: ${deg}°  •  ${p.inVault?"Vault 811":"Wasteland"}`;
 
+    // Quest objectives: prefer new questSys, fall back to legacy quest.log for backward compat
     const qObj=this.questSys.topObjective();
     this.ui.obj.textContent=qObj?`Objective: ${qObj}`:(this.quest?.log?.length?`Objective: ${this.quest.log[0]}`:"");
 
@@ -2583,6 +2584,7 @@ class Game{
       this.scene.fog.far=lerp(this.scene.fog.far,fog.far,2*dt);
 
       // World trigger: torii proximity (Q4 Shrine Warden Warning)
+      const TORII_TRIGGER_RADIUS=30;
       if(!this.questSys.getFlag("reachedTorii")){
         this._toriiCheckTimer=(this._toriiCheckTimer||0)+dt;
         if(this._toriiCheckTimer>2.0){ // check every 2 seconds, not every frame
@@ -2594,7 +2596,7 @@ class Game{
                 const wp=new THREE.Vector3();
                 child.getWorldPosition(wp);
                 const dx=pp.x-wp.x, dz=pp.z-wp.z;
-                if(dx*dx+dz*dz<30*30){
+                if(dx*dx+dz*dz<TORII_TRIGGER_RADIUS*TORII_TRIGGER_RADIUS){
                   this.questSys.setFlag("reachedTorii",true);
                   this.questSys.addObjective("Heed the Shrine Warden warning");
                   this.questSys.addLog("Reached a torii gate. The Shrine Wardens are watching.");
@@ -2609,6 +2611,7 @@ class Game{
       }
 
       // World trigger: rail station proximity (for Q3)
+      const RAIL_TRIGGER_RADIUS=35;
       if(this.questSys.getStage("q3_rail_whisper")>=10 && !this.questSys.getFlag("reachedRailStation")){
         this._railCheckTimer=(this._railCheckTimer||0)+dt;
         if(this._railCheckTimer>2.0){
@@ -2620,7 +2623,7 @@ class Game{
                 const wp=new THREE.Vector3();
                 child.getWorldPosition(wp);
                 const dx=pp.x-wp.x, dz=pp.z-wp.z;
-                if(dx*dx+dz*dz<35*35){
+                if(dx*dx+dz*dz<RAIL_TRIGGER_RADIUS*RAIL_TRIGGER_RADIUS){
                   this.questSys.setFlag("reachedRailStation",true);
                   this.questSys.completeObjective("Investigate radio signals near the rail stations");
                   this.questSys.addObjective("Report findings to Guard Kenji");

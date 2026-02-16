@@ -7,6 +7,7 @@ import { NPCManager } from "./npc.js";
 import { DialogueController } from "./dialogue.js";
 import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
 import { Quest } from "./quest.js";
+import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RADIUS, OUTPOST_KILL_RADIUS, SAFE_ZONE_CHECK_INTERVAL, RAIL_STATION_CENTER, RAIL_DISCOVER_RADIUS, isInSafeZone, enforceSafeZone } from "./outpost.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -1365,7 +1366,13 @@ class Game{
 
     this.npcMgr=new NPCManager(this.scene);
     this.npcMgr.spawnVaultNPCs();
+    this.npcMgr.spawnOutsideNPCs();
+    this.npcMgr.setOutsideVisible(false);
     this.dialogueCtrl=new DialogueController();
+
+    // Build outpost (meshes + interactables)
+    this.outpost=buildOutpost(this.scene, this.world);
+    this.outpost.group.visible=false;
 
     this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue
     this.autoFire=false;
@@ -1751,6 +1758,8 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(true);
+    this.npcMgr.setOutsideVisible(false);
+    this.outpost.group.visible=false;
     // Reset vault door
     this.vault.door.rotation.y=0;
     this.vault.door.position.x=0;
@@ -1768,6 +1777,8 @@ class Game{
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
     this.vault.setVisible(this.player.inVault);
+    this.npcMgr.setOutsideVisible(!this.player.inVault);
+    this.outpost.group.visible=!this.player.inVault;
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.resume();
   }
@@ -1816,6 +1827,8 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
     this.vault.setVisible(this.player.inVault);
+    this.npcMgr.setOutsideVisible(!this.player.inVault);
+    this.outpost.group.visible=!this.player.inVault;
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
   }
@@ -2051,6 +2064,8 @@ class Game{
     add(this.world.enemies);
     add(this.world.interact);
     add(this.npcMgr.group);
+    add(this.npcMgr.outsideGroup);
+    if(this.outpost) add(this.outpost.group);
     for(const l of this._loots) add(l);
     const hits=rc.intersectObjects(meshes,true);
     if(!hits.length) return null;
@@ -2120,6 +2135,21 @@ class Game{
       else if(r<0.88) this.spawnLoot(root.position.clone(),{id:"circuits",qty:1});
       else this.spawnLoot(root.position.clone(),{id:"radaway",qty:1});
     }
+    // Track kills for Q5 "Cleanse the Path" (kills near outpost)
+    if(this.questSys.getFlag("q5_branch")==="cleanse" && this.questSys.getStage("q5_outpost_accord")===20){
+      const dx=root.position.x-OUTPOST_CENTER.x, dz=root.position.z-OUTPOST_CENTER.z;
+      if(dx*dx+dz*dz<OUTPOST_KILL_RADIUS*OUTPOST_KILL_RADIUS){ // within kill tracking radius of outpost
+        this.questSys.incFlag("q5_killCount",1);
+        const kills=this.questSys.getFlag("q5_killCount");
+        if(kills>=3){
+          this.questSys.completeObjective("Clear 3 enemies near the outpost");
+          this.questSys.addObjective("Report to Warden Aoi");
+          this.ui.showToast("Path cleared! Report to Warden Aoi.",2.5);
+        } else {
+          this.ui.showToast(`Enemies cleared: ${kills}/3`,1.5);
+        }
+      }
+    }
     for(let i=0;i<8;i++) this.particles.spawn(root.position.clone().add(v3(0,0.8,0)),v3(rand(-2,2),rand(1,3),rand(-2,2)),0.35,0.05);
     this.world.enemies.remove(root);
     root.parent?.remove(root);
@@ -2147,7 +2177,11 @@ class Game{
     }
     if(t?.userData?.interact){
       this.ui.hint.style.display="block";
-      this.ui.hint.textContent=`E: ${(t.userData.kind==="vaultDoor")?"Open":"Use"} ${t.userData.name||"Object"}`;
+      let action="Use";
+      if(t.userData.kind==="vaultDoor") action="Open";
+      else if(t.userData.kind==="restPoint") action="Rest at";
+      else if(t.userData.kind==="noticeBoard") action="Read";
+      this.ui.hint.textContent=`E: ${action} ${t.userData.name||"Object"}`;
       this.player.interactTarget=t; return;
     }
     this.ui.hint.style.display="none";
@@ -2191,6 +2225,19 @@ class Game{
         this.audio.click();
       }else if(ud.kind==="vaultDoor"){
         this.exitVault();
+      }else if(ud.kind==="restPoint"){
+        this.player.hp=this.player.hpMax;
+        this.player.stamina=this.player.staminaMax;
+        this.doSave();
+        this.ui.showToast("Rested. Saved.",2.5);
+        this.audio.click();
+      }else if(ud.kind==="noticeBoard"){
+        const topObj=this.questSys.topObjective();
+        const lore="The shrine protects those who honor the old ways.";
+        const msg=topObj?`${lore}\nObjective: ${topObj}`:lore;
+        this.ui.showToast(msg,3.5);
+        this.questSys.setFlag("discoveredShrineOutpost",true);
+        this.audio.click();
       }
     }
   }
@@ -2263,6 +2310,8 @@ class Game{
   _completeExitVault(){
     this.player.inVault=false;
     this.vault.setVisible(false);
+    this.npcMgr.setOutsideVisible(true);
+    this.outpost.group.visible=true;
     this.player.pos.set(0,1.6,20);
     this.player.yaw=Math.PI;
     this.audio.startAmbient("waste");
@@ -2562,6 +2611,7 @@ class Game{
     if(this.mode==="dialogue"){
       this.updateTime(dt);
       this.npcMgr.update(dt, this.player.pos, this.dialogueCtrl.currentNpcId);
+      if(!this.player.inVault) this.npcMgr.updateOutside(dt, this.player.pos);
       this.renderHUD();
       this.renderer.render(this.scene,this.camera);
       return;
@@ -2572,6 +2622,8 @@ class Game{
     this.player.update(dt,this.input,this);
     this.vault.setVisible(this.player.inVault);
     this.npcMgr.setVisible(this.player.inVault);
+    this.npcMgr.setOutsideVisible(!this.player.inVault);
+    this.outpost.group.visible=!this.player.inVault;
 
     if(!this.player.inVault){
       this.world.update(this.player.pos);
@@ -2582,6 +2634,41 @@ class Game{
       const fog=this.world.fogForBiome(biome);
       this.scene.fog.near=lerp(this.scene.fog.near,fog.near,2*dt);
       this.scene.fog.far=lerp(this.scene.fog.far,fog.far,2*dt);
+
+      // Update outside NPCs
+      this.npcMgr.updateOutside(dt, this.player.pos);
+
+      // --- Outpost discover trigger (cached position, no scene scan) ---
+      if(!this.questSys.getFlag("discoveredOutpost")){
+        const pp=this.player.pos;
+        const dx=pp.x-OUTPOST_CENTER.x, dz=pp.z-OUTPOST_CENTER.z;
+        if(dx*dx+dz*dz<OUTPOST_DISCOVER_RADIUS*OUTPOST_DISCOVER_RADIUS){
+          this.questSys.setFlag("discoveredOutpost",true);
+          this.questSys.setFlag("discoveredShrineOutpost",true);
+          this.questSys.advanceStage("q5_outpost_accord",0);
+          this.questSys.addObjective("Talk to Warden Aoi at the Shrine Outpost");
+          this.questSys.addLog("Discovered the Shrine Outpost — a safe settlement near the torii gate.");
+          this.ui.showToast("Discovered: Shrine Outpost",3.0);
+        }
+      }
+
+      // --- Rail station discover trigger (cached position, no scene scan) ---
+      if(!this.questSys.getFlag("discoveredRailContact")){
+        const pp=this.player.pos;
+        const dx=pp.x-RAIL_STATION_CENTER.x, dz=pp.z-RAIL_STATION_CENTER.z;
+        if(dx*dx+dz*dz<RAIL_DISCOVER_RADIUS*RAIL_DISCOVER_RADIUS){
+          this.questSys.setFlag("discoveredRailContact",true);
+          this.questSys.addLog("A figure lurks near the collapsed rail station. Could be a contact.");
+          this.ui.showToast("Someone is nearby... a Rail Ghost contact?",3.0);
+        }
+      }
+
+      // --- Safe zone enforcement (every 3 seconds, not every frame) ---
+      this._safeZoneTimer=(this._safeZoneTimer||0)+dt;
+      if(this._safeZoneTimer>SAFE_ZONE_CHECK_INTERVAL){
+        this._safeZoneTimer=0;
+        enforceSafeZone(this.world.enemies);
+      }
 
       // World trigger: torii proximity (Q4 Shrine Warden Warning)
       const TORII_TRIGGER_RADIUS=30;

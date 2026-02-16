@@ -37,6 +37,7 @@ export const DialogueTrees = {
     start: "greeting",
     startFn: (player, game) => {
       const q = Q(game);
+      if (q.getFlag("soldIntelToJiro")) return "greeting_suspicious_jiro";
       if (q.getFlag("vaultLieRevealed")) return "greeting_suspicious";
       if (q.getStage("q1_permission_lie") >= 30) return "greeting_done";
       if (q.getStage("q1_permission_lie") >= 10) return "greeting_active";
@@ -294,6 +295,35 @@ export const DialogueTrees = {
         choices: [
           { text: "[End]", next: null }
         ]
+      },
+      // --- Reaction: sold intel to Jiro ---
+      greeting_suspicious_jiro: {
+        id: "greeting_suspicious_jiro",
+        speaker: "Overseer Tanaka",
+        text: "...I've heard whispers. Someone's been sharing vault information with outsiders. You wouldn't know anything about that, would you?",
+        choices: [
+          { text: "I don't know what you're talking about.", next: "suspicious_jiro_deny" },
+          { text: "Information is currency out there. I did what I had to.", next: "suspicious_jiro_admit" }
+        ]
+      },
+      suspicious_jiro_deny: {
+        id: "suspicious_jiro_deny",
+        speaker: "Overseer Tanaka",
+        text: "Hmm. I hope so. Because if I find out someone compromised this vault's security... there will be consequences. Dismissed.",
+        choices: [
+          { text: "[End]", next: null }
+        ]
+      },
+      suspicious_jiro_admit: {
+        id: "suspicious_jiro_admit",
+        speaker: "Overseer Tanaka",
+        text: "...At least you're honest. But honesty doesn't undo the damage. The vault's security protocols are compromised. I'll deal with the fallout. Get out of my sight.",
+        choices: [
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          Q(game).changeRep("vault", -5);
+        }
       },
       // --- Loyal path completion (return from shrine without rebel branch) ---
       quest_report_loyal: {
@@ -569,6 +599,7 @@ export const DialogueTrees = {
     start: "greeting",
     startFn: (player, game) => {
       const q = Q(game);
+      if (q.getFlag("reportedJiroToKenji") && q.getStage("q3_rail_whisper") < 30) return "greeting_jiro_report";
       if (q.getStage("q3_rail_whisper") >= 30) return "greeting_q3done";
       if (q.getStage("q3_rail_whisper") >= 10) return "greeting_q3active";
       if (q.getStage("q1_permission_lie") >= 10) return "greeting_q1aware";
@@ -721,6 +752,41 @@ export const DialogueTrees = {
           { text: "Just passing by.", next: "goodbye" }
         ]
       },
+      // --- Reaction: player reported Jiro ---
+      greeting_jiro_report: {
+        id: "greeting_jiro_report",
+        speaker: "Guard Kenji",
+        text: "You came through. I've got your report about Jiro and the Rail Ghost operations. This is exactly what I needed — locations, frequencies, contacts. The vault's security just got a lot tighter.",
+        choices: [
+          { text: "Glad I could help.", next: "jiro_report_thanks" },
+          { text: "What happens to the Rail Ghosts now?", next: "jiro_report_fate" }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.advanceStage("q3_rail_whisper", 30);
+          q.completeObjective("Investigate radio signals near the rail stations");
+          q.changeRep("vault", 10);
+          player.skillPoints = (player.skillPoints || 0) + 1;
+          q.addLog("Reported Jiro's Rail Ghost operations to Kenji. Security enhanced.");
+          game.ui.showToast("Quest complete: Rail Whisper (+1 Skill Point, +Vault rep)");
+        }
+      },
+      jiro_report_thanks: {
+        id: "jiro_report_thanks",
+        speaker: "Guard Kenji",
+        text: "You're a reliable operator. The vault could use more people like you. If you need tactical support, come find me.",
+        choices: [
+          { text: "[End]", next: null }
+        ]
+      },
+      jiro_report_fate: {
+        id: "jiro_report_fate",
+        speaker: "Guard Kenji",
+        text: "Nothing drastic. We'll monitor their frequencies. If they stay peaceful, we leave them alone. If not... we'll be ready. That's what security means.",
+        choices: [
+          { text: "Fair enough.", next: null }
+        ]
+      },
       // --- Original dialogue preserved ---
       intel: {
         id: "intel",
@@ -783,6 +849,7 @@ export const DialogueTrees = {
     start: "greeting",
     startFn: (player, game) => {
       const q = Q(game);
+      if (q.getFlag("metBrokerJiro")) return "greeting_metjiro";
       if (q.getFlag("rinLogFragment")) return "greeting_fragment_given";
       if (q.getStage("q1_permission_lie") >= 10) return "greeting_q1aware";
       return "greeting";
@@ -953,6 +1020,567 @@ export const DialogueTrees = {
         id: "goodbye",
         speaker: "Scavenger Rin",
         text: "Good luck out there. If you find anything interesting, come tell me about it.",
+        choices: [
+          { text: "[End]", next: null }
+        ]
+      },
+      // --- Reactions to outside flags ---
+      greeting_metjiro: {
+        id: "greeting_metjiro",
+        speaker: "Scavenger Rin",
+        text: "I heard you met someone at the rail station. Jiro, right? He's sharp — too sharp for his own good. Watch what you trade with him. Information is his currency.",
+        choices: [
+          { text: "You know Broker Jiro?", next: "rin_jiro_know" },
+          { text: "I can handle myself.", next: "goodbye" }
+        ]
+      },
+      rin_jiro_know: {
+        id: "rin_jiro_know",
+        speaker: "Scavenger Rin",
+        text: "We've crossed paths. The Rail Ghosts move through the tunnels like smoke. Jiro's their mouthpiece — but not their leader. Remember that.",
+        choices: [
+          { text: "Noted. Thanks.", next: "goodbye" }
+        ]
+      }
+    }
+  },
+
+  // ===================== WARDEN AOI =====================
+  // Q5: "Outpost Accord"
+  warden_aoi: {
+    start: "greeting",
+    startFn: (player, game) => {
+      const q = Q(game);
+      if (q.getStage("q5_outpost_accord") >= 30) return "greeting_done";
+      if (q.getStage("q5_outpost_accord") >= 20) return "greeting_task_active";
+      if (q.getStage("q5_outpost_accord") >= 10) return "greeting_q5active";
+      if (q.getFlag("reachedTorii")) return "greeting_warden";
+      return "greeting";
+    },
+    nodes: {
+      greeting: {
+        id: "greeting",
+        speaker: "Warden Aoi",
+        text: "Another vault dweller. I've seen your kind before — stumbling out of metal tombs, blinking at the sky. What do you want?",
+        choices: [
+          { text: "Who are you?", next: "who" },
+          { text: "I mean no harm. What is this place?", next: "outpost_info" },
+          { text: "I'm just passing through.", next: "goodbye" }
+        ]
+      },
+      greeting_warden: {
+        id: "greeting_warden",
+        speaker: "Warden Aoi",
+        text: "You passed through a torii gate. That means the Wardens have noticed you. I'm Aoi — I keep this outpost safe. You're welcome here... for now.",
+        choices: [
+          { text: "The Wardens? Tell me about your group.", next: "who" },
+          { text: "I need supplies. Can we trade?", next: "vendor" },
+          { text: "I'm looking for work. Anything I can do?", next: "quest_offer" }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          if (q.getStage("q5_outpost_accord") < 10) {
+            q.advanceStage("q5_outpost_accord", 10);
+            q.addObjective("Talk to Warden Aoi at the Shrine Outpost");
+            q.completeObjective("Talk to Warden Aoi at the Shrine Outpost");
+            q.addLog("Met Warden Aoi at the Shrine Outpost. The Wardens protect sacred grounds.");
+            game.ui.showToast("Met Warden Aoi.");
+          }
+        }
+      },
+      who: {
+        id: "who",
+        speaker: "Warden Aoi",
+        text: "The Shrine Wardens guard the old sacred places — torii gates, shrines, the land around them. We don't trust vault technology. It brought this ruin. But we don't turn away those in need.",
+        choices: [
+          { text: "I can respect that. How can I help?", next: "quest_offer" },
+          { text: "Can I trade with you?", next: "vendor" },
+          { text: "I'll remember that.", next: "goodbye" }
+        ]
+      },
+      outpost_info: {
+        id: "outpost_info",
+        speaker: "Warden Aoi",
+        text: "The Shrine Outpost. We built it around an old torii — the gate still stands. Inside this perimeter, we keep things safe. No mutants, no raiders. Rest if you need to.",
+        choices: [
+          { text: "How do you keep it safe?", next: "safe_zone_info" },
+          { text: "I could use work. Got any?", next: "quest_offer" },
+          { text: "Thanks.", next: "goodbye" }
+        ]
+      },
+      safe_zone_info: {
+        id: "safe_zone_info",
+        speaker: "Warden Aoi",
+        text: "Perimeter patrols. Incense barriers that confuse the crawlers. And a lot of stubbornness. The shrine's blessing helps too... or maybe that's just what I tell myself.",
+        choices: [
+          { text: "I could help with patrols.", next: "quest_offer" },
+          { text: "Interesting. Thanks.", next: "goodbye" }
+        ]
+      },
+      // --- Q5 Quest Offer ---
+      quest_offer: {
+        id: "quest_offer",
+        speaker: "Warden Aoi",
+        text: "If you want to earn the Wardens' trust, I have two tasks. Choose what suits you: clear the mutants threatening a nearby path, or bring offerings for the shrine — scrap and cloth we need for repairs.",
+        choices: [
+          { text: "I'll clear the path. How many enemies?", next: "quest_branch_a" },
+          { text: "I'll bring offerings. What do you need?", next: "quest_branch_b" },
+          {
+            text: "[Toughness 2] I don't do errands. But I could be useful in other ways.",
+            next: "quest_tough_route",
+            conditionLabel: "[Toughness 2]",
+            condition: (player) => (player.skills.toughness || 0) >= 2
+          },
+          { text: "Not right now.", next: "goodbye" }
+        ]
+      },
+      quest_branch_a: {
+        id: "quest_branch_a",
+        speaker: "Warden Aoi",
+        text: "Three mutants have been prowling the forest paths north of here. Kill them and the path is safe for our scouts. Come back when it's done.",
+        choices: [
+          { text: "Consider it done.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.advanceStage("q5_outpost_accord", 20);
+          q.setFlag("q5_branch", "cleanse");
+          q.setFlag("q5_killCount", 0);
+          q.addObjective("Clear 3 enemies near the outpost");
+          q.addLog("Warden Aoi asked me to clear 3 mutants from the forest paths.");
+          q.changeRep("wardens", 5);
+          game.ui.showToast("Quest: Outpost Accord — Cleanse the Path");
+        }
+      },
+      quest_branch_b: {
+        id: "quest_branch_b",
+        speaker: "Warden Aoi",
+        text: "Bring me 3 Scrap Metal and 2 Cloth. We use them to repair the barricades and weave new incense wraps. Simple, but essential.",
+        choices: [
+          { text: "I'll gather them.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.advanceStage("q5_outpost_accord", 20);
+          q.setFlag("q5_branch", "offerings");
+          q.addObjective("Bring Warden Aoi 3 Scrap and 2 Cloth");
+          q.addLog("Warden Aoi needs 3 Scrap + 2 Cloth for shrine repairs.");
+          q.changeRep("wardens", 5);
+          game.ui.showToast("Quest: Outpost Accord — Offerings");
+        }
+      },
+      quest_tough_route: {
+        id: "quest_tough_route",
+        speaker: "Warden Aoi",
+        text: "...You've got nerve. Most vault people are soft. Fine — I'll respect the honesty. Do one task for me and you'll have the Wardens' backing. Your choice: fight or supply.",
+        choices: [
+          { text: "I'll fight. Point me at the mutants.", next: "quest_branch_a" },
+          { text: "I'll supply. What do you need?", next: "quest_branch_b" },
+          { text: "I'll think about it.", next: "goodbye" }
+        ],
+        effect: (player, game) => {
+          Q(game).changeRep("wardens", 5);
+          Q(game).addLog("Impressed Warden Aoi with toughness. Earned early respect.");
+        }
+      },
+      // --- Q5 Active ---
+      greeting_q5active: {
+        id: "greeting_q5active",
+        speaker: "Warden Aoi",
+        text: "You accepted a task. Have you completed it?",
+        choices: [
+          { text: "I've cleared the path — the mutants are dead.", next: "q5_complete_a",
+            condition: (player, game) => Q(game).getFlag("q5_branch") === "cleanse" && (Q(game).getFlag("q5_killCount") || 0) >= 3,
+            conditionLabel: "[3 Kills Complete]"
+          },
+          { text: "Here — 3 Scrap and 2 Cloth.", next: "q5_complete_b",
+            condition: (player, game) => Q(game).getFlag("q5_branch") === "offerings" && hasItem(player, "scrap", 3) && hasItem(player, "cloth", 2),
+            conditionLabel: "[3 Scrap + 2 Cloth]"
+          },
+          { text: "Not yet. Still working on it.", next: "q5_wait" },
+          { text: "Can I trade while I'm here?", next: "vendor" }
+        ]
+      },
+      greeting_task_active: {
+        id: "greeting_task_active",
+        speaker: "Warden Aoi",
+        text: "Back again. How goes the task?",
+        choices: [
+          { text: "Path is clear.", next: "q5_complete_a",
+            condition: (player, game) => Q(game).getFlag("q5_branch") === "cleanse" && (Q(game).getFlag("q5_killCount") || 0) >= 3,
+            conditionLabel: "[3 Kills Complete]"
+          },
+          { text: "Here are the offerings.", next: "q5_complete_b",
+            condition: (player, game) => Q(game).getFlag("q5_branch") === "offerings" && hasItem(player, "scrap", 3) && hasItem(player, "cloth", 2),
+            conditionLabel: "[3 Scrap + 2 Cloth]"
+          },
+          { text: "Still working on it.", next: "q5_wait" },
+          { text: "Let me trade.", next: "vendor" }
+        ]
+      },
+      q5_wait: {
+        id: "q5_wait",
+        speaker: "Warden Aoi",
+        text: "Take your time. But don't take too long — the wasteland doesn't wait for anyone.",
+        choices: [
+          { text: "[End]", next: null }
+        ]
+      },
+      q5_complete_a: {
+        id: "q5_complete_a",
+        speaker: "Warden Aoi",
+        text: "The path is clear? Good. The Wardens owe you a debt. Here — herbal stims, crafted the old way. And this... you've earned our trust.",
+        choices: [
+          { text: "Thank you, Aoi.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.advanceStage("q5_outpost_accord", 30);
+          q.completeObjective("Clear 3 enemies near the outpost");
+          q.setFlag("wardensTrust", true);
+          q.changeRep("wardens", 15);
+          addItem(player, "stim", 2);
+          addItem(player, "radaway", 1);
+          q.addLog("Cleared the forest path for the Wardens. Earned their trust.");
+          game.ui.showToast("Quest complete: Outpost Accord (+2 Stim, +1 Rad-Away, Wardens trust)");
+        }
+      },
+      q5_complete_b: {
+        id: "q5_complete_b",
+        speaker: "Warden Aoi",
+        text: "These supplies will keep the shrine standing another season. You've honored the old ways. Take these — and know the Wardens consider you an ally.",
+        choices: [
+          { text: "Glad to help.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          removeItem(player, "scrap", 3);
+          removeItem(player, "cloth", 2);
+          q.advanceStage("q5_outpost_accord", 30);
+          q.completeObjective("Bring Warden Aoi 3 Scrap and 2 Cloth");
+          q.setFlag("wardensTrust", true);
+          q.changeRep("wardens", 15);
+          addItem(player, "stim", 2);
+          addItem(player, "ration", 3);
+          q.addLog("Delivered offerings to Warden Aoi. The Wardens consider us an ally.");
+          game.ui.showToast("Quest complete: Outpost Accord (+2 Stim, +3 Ration, Wardens trust)");
+        }
+      },
+      // --- Q5 Done ---
+      greeting_done: {
+        id: "greeting_done",
+        speaker: "Warden Aoi",
+        text: "Ally. You're always welcome at the outpost. Need anything?",
+        choices: [
+          { text: "Can I trade?", next: "vendor" },
+          { text: "Just checking in.", next: "goodbye" }
+        ]
+      },
+      // --- Vendor ---
+      vendor: {
+        id: "vendor",
+        speaker: "Warden Aoi",
+        text: "I trade in herbal remedies and basic supplies. Prices depend on how the Wardens feel about you.",
+        choices: [
+          { text: "Trade: 2 Scrap → 1 Field Stim", next: "trade_stim",
+            condition: (player) => hasItem(player, "scrap", 2),
+            conditionLabel: "[2 Scrap]"
+          },
+          { text: "Trade: 1 Scrap → 2 Rations", next: "trade_ration",
+            condition: (player) => hasItem(player, "scrap", 1),
+            conditionLabel: "[1 Scrap]"
+          },
+          { text: "Trade: 1 Circuit → 1 Rad-Away", next: "trade_radaway",
+            condition: (player) => hasItem(player, "circuits", 1),
+            conditionLabel: "[1 Circuit]"
+          },
+          { text: "Maybe later.", next: "goodbye" }
+        ]
+      },
+      trade_stim: {
+        id: "trade_stim",
+        speaker: "Warden Aoi",
+        text: "Herbal blend — works almost as well as vault chemistry. Almost.",
+        choices: [
+          { text: "Thanks. Anything else?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "scrap", 2);
+          addItem(player, "stim", 1);
+          game.ui.showToast("Received: Field Stim");
+        }
+      },
+      trade_ration: {
+        id: "trade_ration",
+        speaker: "Warden Aoi",
+        text: "Dried rice and preserved greens. It'll keep you going.",
+        choices: [
+          { text: "Thanks. Anything else?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "scrap", 1);
+          addItem(player, "ration", 2);
+          game.ui.showToast("Received: Ration Pack x2");
+        }
+      },
+      trade_radaway: {
+        id: "trade_radaway",
+        speaker: "Warden Aoi",
+        text: "Radiation purge — old recipe using circuit capacitors. Don't ask how.",
+        choices: [
+          { text: "Thanks. Anything else?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "circuits", 1);
+          addItem(player, "radaway", 1);
+          game.ui.showToast("Received: Rad-Away");
+        }
+      },
+      goodbye: {
+        id: "goodbye",
+        speaker: "Warden Aoi",
+        text: "The shrine watches over you. Stay safe out there.",
+        choices: [
+          { text: "[End]", next: null }
+        ]
+      }
+    }
+  },
+
+  // ===================== BROKER JIRO =====================
+  // Rail Ghost Union contact — info broker + vendor
+  broker_jiro: {
+    start: "greeting",
+    startFn: (player, game) => {
+      const q = Q(game);
+      if (q.getFlag("jiroDealtDone")) return "greeting_dealt";
+      if (q.getFlag("metBrokerJiro")) return "greeting_return";
+      return "greeting";
+    },
+    nodes: {
+      greeting: {
+        id: "greeting",
+        speaker: "Broker Jiro",
+        text: "Well, well. A vault rat this far from the hole. I'm Jiro — I deal in information and supplies. The Rail Ghost Union keeps the tunnels open for trade. What can I do for you?",
+        choices: [
+          { text: "Rail Ghost Union? Tell me more.", next: "rail_info" },
+          { text: "I need supplies — ammo, scrap.", next: "vendor" },
+          { text: "I have information to trade.", next: "intel_offer",
+            condition: (player, game) => Q(game).getStage("q3_rail_whisper") >= 10,
+            conditionLabel: "[Rail Whisper Quest]"
+          },
+          { text: "Just looking around.", next: "goodbye" }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          if (!q.getFlag("metBrokerJiro")) {
+            q.setFlag("metBrokerJiro", true);
+            q.addLog("Met Broker Jiro at the collapsed rail station. He works for the Rail Ghost Union.");
+            game.ui.showToast("Met Broker Jiro — Rail Ghost Union");
+          }
+        }
+      },
+      rail_info: {
+        id: "rail_info",
+        speaker: "Broker Jiro",
+        text: "We move through the old subway tunnels and rail lines. Salvage, trade, survive. We're not hostile — unless you make us. The vault's guard, Kenji, has been sniffing around our frequencies. That's... inconvenient.",
+        choices: [
+          { text: "Kenji sent me to investigate.", next: "kenji_reveal",
+            condition: (player, game) => Q(game).getStage("q3_rail_whisper") >= 10,
+            conditionLabel: "[Rail Whisper Quest]"
+          },
+          { text: "Interesting. What do you trade?", next: "vendor" },
+          { text: "I'll keep that in mind.", next: "goodbye" }
+        ]
+      },
+      kenji_reveal: {
+        id: "kenji_reveal",
+        speaker: "Broker Jiro",
+        text: "Ha! So Kenji's little spy is you? Relax — I expected this. Here's the deal: I have information about what's really out here. Vault logs, mutation data, trade routes. Valuable stuff.",
+        choices: [
+          { text: "What do you want for it?", next: "intel_offer" },
+          { text: "I should report back to Kenji.", next: "goodbye" }
+        ]
+      },
+      // --- Intel Trade Branch ---
+      intel_offer: {
+        id: "intel_offer",
+        speaker: "Broker Jiro",
+        text: "Here's my offer. You have vault intel — access codes, log fragments, whatever your Overseer hides. Trade me that, and I'll give you ammo, supplies, and Rail Ghost goodwill. Or...",
+        choices: [
+          { text: "Trade Info — I'll share vault intel for supplies.", next: "trade_info" },
+          { text: "Double Agent — I'll report your location to Kenji.", next: "double_agent" },
+          {
+            text: "[Scavenger 2] I want a better deal. What else have you got?",
+            next: "better_deal",
+            conditionLabel: "[Scavenger 2]",
+            condition: (player) => (player.skills.scavenger || 0) >= 2
+          },
+          { text: "I need to think about this.", next: "goodbye" }
+        ]
+      },
+      trade_info: {
+        id: "trade_info",
+        speaker: "Broker Jiro",
+        text: "Smart choice. The Rail Ghosts remember their friends. Here — ammo, scrap, and my personal frequency. Come back anytime.",
+        choices: [
+          { text: "Pleasure doing business.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.setFlag("soldIntelToJiro", true);
+          q.setFlag("jiroDealtDone", true);
+          q.changeRep("rail", 15);
+          q.changeRep("vault", -10);
+          addItem(player, "scrap", 4);
+          q.addObjective("Decide who gets the truth");
+          q.completeObjective("Decide who gets the truth");
+          q.addLog("Traded vault intel to Broker Jiro. Rail Ghost Union alliance strengthened.");
+          game.ui.showToast("Intel traded. +Rail rep. -Vault rep. +4 Scrap.");
+        }
+      },
+      double_agent: {
+        id: "double_agent",
+        speaker: "Broker Jiro",
+        text: "...You're bluffing. Right? No — I see it in your eyes. Fine. Do what you have to do. But the Rail Ghosts have long memories. We'll be watching.",
+        choices: [
+          { text: "Kenji will know everything.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.setFlag("reportedJiroToKenji", true);
+          q.setFlag("jiroDealtDone", true);
+          q.changeRep("vault", 10);
+          q.changeRep("rail", -15);
+          q.addObjective("Decide who gets the truth");
+          q.completeObjective("Decide who gets the truth");
+          q.addLog("Chose to report Broker Jiro's operations to Guard Kenji. Double agent path.");
+          game.ui.showToast("You'll report Jiro to Kenji. +Vault rep. -Rail rep.");
+        }
+      },
+      better_deal: {
+        id: "better_deal",
+        speaker: "Broker Jiro",
+        text: "A scavenger's eye, huh? Fine. I'll add a circuit board and extra shells on top of the standard offer. But the intel better be worth it.",
+        choices: [
+          { text: "Deal. Here's what I know.", next: "trade_info_better" },
+          { text: "Let me think about it.", next: "goodbye" }
+        ]
+      },
+      trade_info_better: {
+        id: "trade_info_better",
+        speaker: "Broker Jiro",
+        text: "Excellent. The Rail Ghosts don't forget a profitable partner. Here's your cut — and if you need anything else, you know where to find me.",
+        choices: [
+          { text: "Good doing business.", next: null }
+        ],
+        effect: (player, game) => {
+          const q = Q(game);
+          q.setFlag("soldIntelToJiro", true);
+          q.setFlag("jiroDealtDone", true);
+          q.changeRep("rail", 20);
+          q.changeRep("vault", -10);
+          addItem(player, "scrap", 4);
+          addItem(player, "circuits", 1);
+          q.addObjective("Decide who gets the truth");
+          q.completeObjective("Decide who gets the truth");
+          q.addLog("Negotiated a better deal with Jiro using scavenger instincts. Bonus supplies.");
+          game.ui.showToast("Better deal! +Rail rep. +4 Scrap +1 Circuit.");
+        }
+      },
+      // --- Return visits ---
+      greeting_return: {
+        id: "greeting_return",
+        speaker: "Broker Jiro",
+        text: "You're back. Ready to deal?",
+        choices: [
+          { text: "Let's talk intel.", next: "intel_offer",
+            condition: (player, game) => !Q(game).getFlag("jiroDealtDone"),
+            conditionLabel: "[Intel Available]"
+          },
+          { text: "I need supplies.", next: "vendor" },
+          { text: "Just passing through.", next: "goodbye" }
+        ]
+      },
+      greeting_dealt: {
+        id: "greeting_dealt",
+        speaker: "Broker Jiro",
+        text: "Our business is concluded, but the Rail Ghosts are always open for trade. What do you need?",
+        choices: [
+          { text: "Let me see your stock.", next: "vendor" },
+          { text: "Nothing right now.", next: "goodbye" }
+        ]
+      },
+      // --- Vendor ---
+      vendor: {
+        id: "vendor",
+        speaker: "Broker Jiro",
+        text: "Ammo and salvage — that's what keeps the wasteland turning. Prices depend on our relationship.",
+        choices: [
+          { text: "Trade: 2 Scrap → 1 Field Stim", next: "trade_stim",
+            condition: (player) => hasItem(player, "scrap", 2),
+            conditionLabel: "[2 Scrap]"
+          },
+          { text: "Trade: 1 Scrap → 1 Circuit Board", next: "trade_circuit",
+            condition: (player) => hasItem(player, "scrap", 1),
+            conditionLabel: "[1 Scrap]"
+          },
+          { text: "Trade: 1 Circuit → 2 Cloth", next: "trade_cloth",
+            condition: (player) => hasItem(player, "circuits", 1),
+            conditionLabel: "[1 Circuit]"
+          },
+          { text: "Not now.", next: "goodbye" }
+        ]
+      },
+      trade_stim: {
+        id: "trade_stim",
+        speaker: "Broker Jiro",
+        text: "Rail Ghost special — don't ask where it came from.",
+        choices: [
+          { text: "More trades?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "scrap", 2);
+          addItem(player, "stim", 1);
+          game.ui.showToast("Received: Field Stim");
+        }
+      },
+      trade_circuit: {
+        id: "trade_circuit",
+        speaker: "Broker Jiro",
+        text: "Salvaged from a pre-war junction box. Good condition.",
+        choices: [
+          { text: "More trades?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "scrap", 1);
+          addItem(player, "circuits", 1);
+          game.ui.showToast("Received: Circuit Board");
+        }
+      },
+      trade_cloth: {
+        id: "trade_cloth",
+        speaker: "Broker Jiro",
+        text: "Good quality — from the old textile warehouses near the coast.",
+        choices: [
+          { text: "More trades?", next: "vendor" },
+          { text: "[End]", next: null }
+        ],
+        effect: (player, game) => {
+          removeItem(player, "circuits", 1);
+          addItem(player, "cloth", 2);
+          game.ui.showToast("Received: Cloth x2");
+        }
+      },
+      goodbye: {
+        id: "goodbye",
+        speaker: "Broker Jiro",
+        text: "The tunnels are always open. Find me if you need anything.",
         choices: [
           { text: "[End]", next: null }
         ]

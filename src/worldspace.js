@@ -2,6 +2,41 @@
 // deterministic POI markers/triggers at correct terrain heights.
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
+import { ASSET_BASE } from "./assets.js";
+
+// Mapping from signVariant → texture PNG filename under textures/environment/roads_signs/
+const SIGN_TEXTURE_FILES = {
+  stop: "001.png",
+  slow_down: "002.png",
+  no_entry: "003.png",
+  no_passing: "004.png",
+  no_parking: "005.png",
+  no_stopping: "006.png",
+  one_way: "007.png",
+  pedestrian_crossing: "008.png",
+  caution: "009.png",
+  curve_right: "010.png",
+  curve_left: "011.png",
+  intersection: "012.png",
+  railroad: "013.png",
+  school_zone: "014.png",
+  slippery: "015.png",
+  falling_rocks: "016.png",
+  road_works: "017.png",
+  two_way: "018.png",
+  narrow_road: "019.png",
+  steep_grade: "020.png",
+  yield: "021.png",
+  keep_left: "022.png",
+  keep_right: "023.png",
+  roundabout: "024.png",
+  speed_limit: "025-30.png",
+  direction: "026.png",
+  dead_end: "028.png",
+  national_route: "029.png",
+  guide_board: "030.png",
+  street_name: "032.png",
+};
 
 /**
  * Loads POI data and places objects in the scene at terrain-correct heights.
@@ -28,6 +63,9 @@ export class Worldspace {
     this.debugGroup = new THREE.Group();
     this.debugGroup.visible = false;
     scene.add(this.debugGroup);
+
+    /** Shared texture loader for sign face textures */
+    this._texLoader = new THREE.TextureLoader();
 
     // Radiation zones tracked by world position
     this._radZones = [];
@@ -268,6 +306,18 @@ export class Worldspace {
     const matSignBack = new THREE.MeshStandardMaterial({
       color: 0x3a332a, roughness: 0.95, metalness: 0.15
     });
+
+    // Load the sign face texture PNG and apply it to the front material
+    const texFile = SIGN_TEXTURE_FILES[variant];
+    if (texFile) {
+      const texPath = `${ASSET_BASE}/textures/environment/roads_signs/${texFile}`;
+      this._texLoader.load(texPath, (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        matSignFace.map = texture;
+        matSignFace.color.set(0xffffff);
+        matSignFace.needsUpdate = true;
+      });
+    }
 
     // Rusted pole
     const poleHeight = variant === "guide_board" ? 4.5 : 3.0;

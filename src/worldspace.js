@@ -297,8 +297,9 @@ export class Worldspace {
     // Apply post-apocalyptic tilt (blast damage / ground settling)
     const tiltRad = (tiltDeg * Math.PI) / 180;
     g.rotation.z = tiltRad;
-    // Random rotation around Y for variety
-    g.rotation.y = (poi.world.x * 7 + poi.world.z * 13) % (Math.PI * 2);
+    // Deterministic rotation around Y for variety
+    const rawAngle = poi.world.x * 7 + poi.world.z * 13;
+    g.rotation.y = rawAngle - Math.floor(rawAngle / (Math.PI * 2)) * (Math.PI * 2);
 
     g.position.set(x, y, z);
     g.userData.poi = poi.name;

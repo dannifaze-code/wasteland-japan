@@ -15,6 +15,9 @@ const BANNER_HEIGHT = 6;
 const BANNER_WIDTH  = 1.2;
 const BANNER_DEPTH  = 0.15;
 
+const FLAG_PREFIX = "poi:";
+const FLAG_SUFFIX = ":owner";
+
 /**
  * Manages faction ownership of world POIs.
  *
@@ -79,8 +82,8 @@ export class FactionWorld {
     const flags = questSys.flags;
     for (const key of Object.keys(flags)) {
       // Expected format: "poi:<poiId>:owner" → faction string
-      if (!key.startsWith("poi:") || !key.endsWith(":owner")) continue;
-      const poiId = key.slice(4, key.length - 6); // strip "poi:" and ":owner"
+      if (!key.startsWith(FLAG_PREFIX) || !key.endsWith(FLAG_SUFFIX)) continue;
+      const poiId = key.slice(FLAG_PREFIX.length, key.length - FLAG_SUFFIX.length);
       const faction = flags[key];
       if (typeof faction === "string" && faction && this._owners[poiId] !== faction) {
         this.setOwner(poiId, faction);

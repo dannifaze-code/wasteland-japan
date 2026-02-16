@@ -322,6 +322,7 @@ export class FactionWorld {
     }
 
     const tPos = tud.isPlayer ? playerPos : target.position;
+    if (!tPos) { ud.state = "patrol"; ud.targetId = null; return; }
     const dx = tPos.x - u.position.x, dz = tPos.z - u.position.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
@@ -406,18 +407,11 @@ export class FactionWorld {
     }
   }
 
-  _findTarget(targetId) {
-    if (!targetId) return null;
-    // Direct reference cache
-    for (const u of this.allUnits) {
-      if (u.userData._targetRef) return u.userData._targetRef;
-    }
-    return null;
-  }
-
-  // Override _findTarget to use cached ref per unit
   _findTargetForUnit(ud) {
-    return ud._targetRef && ud._targetRef.parent ? ud._targetRef : null;
+    if (!ud._targetRef) return null;
+    // Player-target stub has no parent; check isPlayer flag
+    if (ud._targetRef.userData?.isPlayer) return ud._targetRef;
+    return ud._targetRef.parent ? ud._targetRef : null;
   }
 
   _killUnit(unit) {

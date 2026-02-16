@@ -1825,6 +1825,7 @@ class Game{
     this.vault.setExteriorVisible(false);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
+    this.factionWorld.setVisible(false);
     this.dungeonMgr.setDoorsVisible(false);
     if(this.useHeightmap){
       this.terrain.setVisible(false);
@@ -1853,6 +1854,7 @@ class Game{
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.factionWorld.setVisible(!this.player.inVault);
     this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     if(this.useHeightmap){
       this.terrain.setVisible(!this.player.inVault);
@@ -1927,6 +1929,7 @@ class Game{
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
+    this.factionWorld.setVisible(!this.player.inVault);
     this.dungeonMgr.setDoorsVisible(!this.player.inVault);
     if(this.useHeightmap){
       this.terrain.setVisible(!this.player.inVault);
@@ -2599,6 +2602,7 @@ class Game{
     this.vault.setExteriorVisible(true);
     this.npcMgr.setOutsideVisible(true);
     this.outpost.group.visible=true;
+    this.factionWorld.setVisible(true);
     // Show terrain + worldspace POIs when using heightmap
     if(this.useHeightmap){
       this.terrain.setVisible(true);
@@ -2641,6 +2645,7 @@ class Game{
     this.npcMgr.setVisible(true);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
+    this.factionWorld.setVisible(false);
     if(this.useHeightmap){
       this.terrain.setVisible(false);
       this.worldspace.setVisible(false);
@@ -2940,6 +2945,7 @@ class Game{
       this.worldspace.setVisible(false);
     }
     this.dungeonMgr.setDoorsVisible(false);
+    this.factionWorld.setVisible(false);
     this.player.pos.set(0,1.6,6);
     this.audio.startAmbient("vault");
     this.quest.step=0;

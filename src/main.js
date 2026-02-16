@@ -3273,6 +3273,10 @@ class Game{
       this.factionWorld.setVisible(true);
       const loadedKeys=new Set(this.world.tiles.keys());
       this.factionWorld.update(dt, this.player.pos, loadedKeys, this.useHeightmap?this.terrain:null);
+      // Ambush encounter toast
+      if(this.factionWorld._ambushTriggered){
+        this.ui.showToast("You feel watched...",3.0);
+      }
       // Roadblock warning toast
       if(this.questSys.getFlag("roadblock_warned") && !this._roadblockToastShown){
         this._roadblockToastShown=true;

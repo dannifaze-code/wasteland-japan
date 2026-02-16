@@ -13,6 +13,8 @@ import { buildOutpost, OUTPOST_CENTER, OUTPOST_SAFE_RADIUS, OUTPOST_DISCOVER_RAD
 import { PIPBOY_CSS, buildPipboyUI, openPipboy as pipboyOpen, closePipboy as pipboyClose, renderPipboy as pipboyRender } from "./pipboyUI.js";
 import { DungeonManager, DungeonDefs } from "./dungeon.js";
 import { CompanionManager, CompanionDefs } from "./companion.js";
+import { HeightmapTerrain, MAP_SIZE, MAP_HALF, HEIGHT_SCALE } from "./terrain.js";
+import { Worldspace } from "./worldspace.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -258,7 +260,7 @@ class Input{
     this.just=new Set();
     this.mouse={dx:0,dy:0,locked:false,sens:0.0022};
     this.mouseButtons=new Map();
-    window.addEventListener("keydown",e=>{ if(e.code==="Tab") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
+    window.addEventListener("keydown",e=>{ if(e.code==="Tab"||e.code==="F8"||e.code==="F9") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
     window.addEventListener("keyup",e=>this.keys.set(e.code,false));
     document.addEventListener("mousemove",e=>{ if(!this.mouse.locked) return; this.mouse.dx+=e.movementX; this.mouse.dy+=e.movementY;});
     document.addEventListener("pointerlockchange",()=>{this.mouse.locked=document.pointerLockElement===this.dom;});
@@ -290,7 +292,7 @@ function defaultSave(){
       radiation:0,armor:0,xp:0,level:1,skillPoints:0,
       skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
     },
-    world:{seed:811, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}}
+    world:{seed:811, useHeightmap:true, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}}
   };
 }
 function loadSave(){
@@ -1214,12 +1216,21 @@ class Player{
     this.vel.y-=18.5*dt;
     this.pos.addScaledVector(this.vel,dt);
 
-    const minY=1.6-this.crouch*0.55;
+    // Terrain-aware grounding
+    let groundY=0;
+    if(!this.inVault && env.useHeightmap && env.terrain && env.terrain.ready){
+      groundY=env.terrain.sampleHeight(this.pos.x,this.pos.z);
+    }
+    const minY=groundY+1.6-this.crouch*0.55;
     if(this.pos.y<minY){ this.pos.y=minY; this.vel.y=0; this.onGround=true; }
 
     if(this.inVault){
       this.pos.x=clamp(this.pos.x,-16.2,16.2);
       this.pos.z=clamp(this.pos.z,-12.5,12.5);
+    }else if(env.useHeightmap){
+      // Clamp to terrain bounds
+      this.pos.x=clamp(this.pos.x,-MAP_HALF+5,MAP_HALF-5);
+      this.pos.z=clamp(this.pos.z,-MAP_HALF+5,MAP_HALF-5);
     }
 
     const planar=Math.hypot(this.vel.x,this.vel.z);
@@ -1468,6 +1479,13 @@ class Game{
     this.vault=new Vault(this.scene);
     this.world=new World(this.scene,this.save.world.seed);
 
+    // Heightmap terrain (replaces tile streaming for outside)
+    this.useHeightmap=this.save.world.useHeightmap!==false;
+    this.terrain=new HeightmapTerrain(this.scene,"./assets/world/heightmap_kuroshima_1024.png");
+    this.terrain.setVisible(false);
+    this.worldspace=new Worldspace(this.scene,this.terrain,"./assets/world/poi_kuroshima_act1.json",{world:this.world});
+    this.worldspace.setVisible(false);
+
     this.npcMgr=new NPCManager(this.scene);
     this.npcMgr.spawnVaultNPCs();
     this.npcMgr.spawnOutsideNPCs();
@@ -1482,6 +1500,9 @@ class Game{
     this.dungeonMgr=new DungeonManager(this.scene, this.world);
     this.dungeonMgr.spawnDoors();
     this.dungeonMgr.setDoorsVisible(false);
+
+    // Debug teleport index
+    this._debugTeleportIdx=0;
 
     this.mode="title"; // title intro play pause inventory skills crafting pipboy dialogue dungeon
     this.autoFire=false;
@@ -1585,6 +1606,8 @@ class Game{
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
     this.npcMgr.setVisible(true);
+    if(this.terrain) this.terrain.setVisible(false);
+    if(this.worldspace) this.worldspace.setVisible(false);
     const buttons=[
       {label:"New Game", onClick:()=>this.startNewGame()},
       {label:this.save.hasSave?"Continue":"Continue (No Save)", onClick:()=>this.save.hasSave?this.continueGame():this.ui.showToast("No save found. Start a new game.")},
@@ -1752,11 +1775,16 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.useHeightmap=true;
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
     this.dungeonMgr.setDoorsVisible(false);
+    if(this.useHeightmap){
+      this.terrain.setVisible(false);
+      this.worldspace.setVisible(false);
+    }
     // Reset vault door
     this.vault.door.rotation.y=0;
     this.vault.door.position.x=0;
@@ -1773,11 +1801,16 @@ class Game{
     this.quest=this.save.world.quest;
     this.questSys=new Quest();
     this.questSys.fromSave(this.save.world.questSys);
+    this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
     this.dungeonMgr.setDoorsVisible(!this.player.inVault);
+    if(this.useHeightmap){
+      this.terrain.setVisible(!this.player.inVault);
+      this.worldspace.setVisible(!this.player.inVault);
+    }
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.resume();
   }
@@ -1813,6 +1846,7 @@ class Game{
     this.save.world.quest=this.quest;
     this.save.world.questSys=this.questSys.toSave();
     this.save.world.companion=this.companionMgr.toSave();
+    this.save.world.useHeightmap=this.useHeightmap;
     this.save.fov=this.fov;
     writeSave(this.save);
     this.ui.showToast("Saved.");
@@ -1827,11 +1861,16 @@ class Game{
     this.questSys.fromSave(this.save.world.questSys);
     if(this.save.world.companion) this.companionMgr.fromSave(this.save.world.companion, this.questSys, this.player.pos);
     if(this.save.fov){ this.fov=this.save.fov; this.camera.fov=this.fov; this.camera.updateProjectionMatrix(); }
+    this.useHeightmap=this.save.world.useHeightmap!==false;
     this.vault.setVisible(this.player.inVault);
     this.vault.setExteriorVisible(!this.player.inVault);
     this.npcMgr.setOutsideVisible(!this.player.inVault);
     this.outpost.group.visible=!this.player.inVault;
     this.dungeonMgr.setDoorsVisible(!this.player.inVault);
+    if(this.useHeightmap){
+      this.terrain.setVisible(!this.player.inVault);
+      this.worldspace.setVisible(!this.player.inVault);
+    }
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
   }
@@ -2044,7 +2083,13 @@ class Game{
     const def=ItemDB[item.id];
     const color=def?.type==="weapon"?0xffe38a:def?.type==="consumable"?0xa0ffcc:0xb7c3ff;
     const m=new THREE.Mesh(new THREE.OctahedronGeometry(0.25,0), new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:0.18,roughness:0.8}));
-    m.position.copy(pos); m.position.y=0.45;
+    m.position.copy(pos);
+    // Ground loot on terrain when outside with heightmap
+    if(!this.player.inVault && this.useHeightmap && this.terrain.ready){
+      m.position.y=this.terrain.sampleHeight(pos.x,pos.z)+0.45;
+    }else{
+      m.position.y=0.45;
+    }
     m.userData={loot:true,item:{...item},name:def?.name||item.id};
     m.castShadow=true;
     this.scene.add(m);
@@ -2072,6 +2117,10 @@ class Game{
     add(this.npcMgr.group);
     add(this.npcMgr.outsideGroup);
     if(this.outpost) add(this.outpost.group);
+    // Terrain mesh for ground intersection
+    if(this.useHeightmap && this.terrain.mesh && !this.player.inVault) add(this.terrain.mesh);
+    // Worldspace POI interactables
+    if(this.worldspace && this.worldspace.poiGroup.visible) add(this.worldspace.poiGroup);
     // Dungeon doors + interiors
     if(this.dungeonMgr){
       for(const dm of this.dungeonMgr.doorMeshes) add(dm.group);
@@ -2435,8 +2484,15 @@ class Game{
     this.vault.setExteriorVisible(true);
     this.npcMgr.setOutsideVisible(true);
     this.outpost.group.visible=true;
+    // Show terrain + worldspace POIs when using heightmap
+    if(this.useHeightmap){
+      this.terrain.setVisible(true);
+      this.worldspace.setVisible(true);
+    }
     // Spawn player just outside the vault entrance facing away
-    this.player.pos.set(0,1.6,6);
+    const spawnX=0, spawnZ=6;
+    const spawnY=this.useHeightmap&&this.terrain.ready?this.terrain.sampleHeight(spawnX,spawnZ)+1.6:1.6;
+    this.player.pos.set(spawnX,spawnY,spawnZ);
     this.player.yaw=0;
     this.audio.startAmbient("waste");
 
@@ -2456,7 +2512,9 @@ class Game{
     // Enemy intro moment — spawn a nearby enemy for tension (far enough to not teleport-attack)
     if(this.world.enemies.children.length===0){
       const e=this.world.makeEnemy("crawler");
-      e.position.set(20,0,40);
+      const eX=20, eZ=40;
+      const eY=this.useHeightmap&&this.terrain.ready?this.terrain.sampleHeight(eX,eZ):0;
+      e.position.set(eX,eY,eZ);
       this.world.enemies.add(e);
     }
   }
@@ -2468,6 +2526,10 @@ class Game{
     this.npcMgr.setVisible(true);
     this.npcMgr.setOutsideVisible(false);
     this.outpost.group.visible=false;
+    if(this.useHeightmap){
+      this.terrain.setVisible(false);
+      this.worldspace.setVisible(false);
+    }
     this.player.pos.set(0,1.6,10);
     this.player.yaw=Math.PI;
     this.audio.startAmbient("vault");
@@ -2504,6 +2566,10 @@ class Game{
     this.npcMgr.setOutsideVisible(false);
     this.vault.setExteriorVisible(false);
     this.dungeonMgr.setDoorsVisible(false);
+    if(this.useHeightmap){
+      this.terrain.setVisible(false);
+      this.worldspace.setVisible(false);
+    }
     // Spawn dungeon enemies + loot on first enter
     const d=this.dungeonMgr.dungeons[dungeonId];
     if(d && !d._contentSpawned){
@@ -2538,7 +2604,13 @@ class Game{
       this._dungeonEnemies=[];
     }
     // Show outside world
-    this.world.static.visible=true;
+    if(this.useHeightmap){
+      this.world.static.visible=false; // tiles hidden; terrain replaces them
+      this.terrain.setVisible(true);
+      this.worldspace.setVisible(true);
+    }else{
+      this.world.static.visible=true;
+    }
     this.world.interact.visible=true;
     this.world.enemies.visible=true;
     this.outpost.group.visible=true;
@@ -2627,7 +2699,12 @@ class Game{
         const ang=Math.atan2(this._enemyToP.x,this._enemyToP.z);
         e.rotation.y=lerp(e.rotation.y,ang,6*dt);
       }
-      e.position.y=0;
+      // Ground enemy on terrain
+      if(this.useHeightmap && this.terrain.ready){
+        e.position.y=this.terrain.sampleHeight(e.position.x,e.position.z);
+      }else{
+        e.position.y=0;
+      }
       e.position.x=clamp(e.position.x,-400,400);
       e.position.z=clamp(e.position.z,-400,400);
     }
@@ -2727,6 +2804,10 @@ class Game{
     this.player.inVault=true;
     this.vault.setVisible(true);
     this.vault.setExteriorVisible(false);
+    if(this.useHeightmap){
+      this.terrain.setVisible(false);
+      this.worldspace.setVisible(false);
+    }
     this.player.pos.set(0,1.6,6);
     this.audio.startAmbient("vault");
     this.quest.step=0;
@@ -2825,6 +2906,10 @@ class Game{
     let rad=0;
     // Base ambient wasteland radiation (very low)
     if(!this.player.inVault) rad+=0.3;
+    // Worldspace radiation zones (heightmap POIs)
+    if(this.useHeightmap && this.worldspace){
+      rad+=this.worldspace.getRadiationAtPos(pos);
+    }
     // Industrial stacks (Coastal Works POI): high radiation within 30m
     // Rail station wreckage: moderate radiation within 25m
     for(const [,tile] of this.world.tiles){
@@ -2882,6 +2967,22 @@ class Game{
       if(this.input.pressed("KeyE")) this.doInteract();
       if(this.input.pressed("KeyK")) this.openPipboy("stats");
       if(this.input.pressed("KeyJ")) this.openPipboy("factions");
+
+      // Debug: F8 toggle POI markers, F9 teleport to POIs
+      if(this.input.pressed("F8") && this.worldspace){
+        const on=this.worldspace.toggleDebug();
+        this.ui.showToast(on?"POI markers ON":"POI markers OFF");
+      }
+      if(this.input.pressed("F9") && this.worldspace && !this.player.inVault){
+        const targets=this.worldspace.getTeleportTargets();
+        if(targets.length>0){
+          const t=targets[this._debugTeleportIdx % targets.length];
+          this._debugTeleportIdx++;
+          const ty=this.terrain.ready?this.terrain.sampleHeight(t.x,t.z)+1.6:(t.y||0)+1.6;
+          this.player.pos.set(t.x,ty,t.z);
+          this.ui.showToast(`Teleported to: ${t.name}`);
+        }
+      }
 
       if(this.autoFire && this.player.weapon.fireMode==="auto") this.player.tryFire(this);
     }
@@ -2966,14 +3067,66 @@ class Game{
     this.npcMgr.setOutsideVisible(!this.player.inVault && !inDungeon);
     this.outpost.group.visible=!this.player.inVault && !inDungeon;
     this.dungeonMgr.setDoorsVisible(!this.player.inVault && !inDungeon);
+
+    // Heightmap terrain + worldspace visibility
+    const outsideActive=!this.player.inVault && !inDungeon;
+    if(this.useHeightmap){
+      this.terrain.setVisible(outsideActive);
+      this.worldspace.setVisible(outsideActive);
+      // Hide tile-based static geometry when heightmap is active outside
+      this.world.static.visible=!outsideActive;
+      this.world.interact.visible=outsideActive; // keep interactables (crates from tiles)
+      this.world.enemies.visible=outsideActive;
+    }
     if(inDungeon){
       this.world.static.visible=false;
       this.world.interact.visible=false;
       this.world.enemies.visible=false;
+      if(this.useHeightmap){
+        this.terrain.setVisible(false);
+        this.worldspace.setVisible(false);
+      }
     }
 
     if(!this.player.inVault && !inDungeon){
-      this.world.update(this.player.pos);
+      if(this.useHeightmap){
+        // Use heightmap terrain — still update world for enemies/interactables only
+        this.world.update(this.player.pos);
+        // Ground enemies on terrain
+        for(const e of this.world.enemies.children){
+          if(e.userData?.enemy && this.terrain.ready){
+            e.position.y=this.terrain.sampleHeight(e.position.x,e.position.z);
+          }
+        }
+        // One-time: ground outpost on terrain
+        if(this.terrain.ready && !this._outpostGrounded){
+          this._outpostGrounded=true;
+          const oc=OUTPOST_CENTER;
+          this.outpost.group.position.y=this.terrain.sampleHeight(oc.x,oc.z);
+          // Ground vault exterior on terrain
+          const vaultPoi=this.worldspace.pois.find(p=>p.type==="vault");
+          if(vaultPoi){
+            const vy=this.terrain.sampleHeight(vaultPoi.world.x,vaultPoi.world.z);
+            this.vault.exterior.position.y=vy;
+          }
+          // Ground dungeon doors on terrain
+          for(const dm of this.dungeonMgr.doorMeshes){
+            const dp=dm.group.position;
+            dp.y=this.terrain.sampleHeight(dp.x,dp.z);
+          }
+          // Ground outside NPCs on terrain
+          if(this.npcMgr.outsideNPCs){
+            for(const npc of this.npcMgr.outsideNPCs){
+              const np=npc.position;
+              const ty=this.terrain.sampleHeight(np.x,np.z);
+              np.y=ty;
+              if(npc.userData) npc.userData._baseY=ty;
+            }
+          }
+        }
+      }else{
+        this.world.update(this.player.pos);
+      }
       // Biome-based fog density
       const tx=Math.floor(this.player.pos.x/this.world.tileSize);
       const tz=Math.floor(this.player.pos.z/this.world.tileSize);
@@ -3024,22 +3177,36 @@ class Game{
         if(this._toriiCheckTimer>2.0){ // check every 2 seconds, not every frame
           this._toriiCheckTimer=0;
           const pp=this.player.pos;
-          for(const [,tile] of this.world.tiles){
-            tile.g.traverse(child=>{
-              if(child.userData?.poi==="Silent Torii" && !this.questSys.getFlag("reachedTorii")){
-                const wp=new THREE.Vector3();
-                child.getWorldPosition(wp);
-                const dx=pp.x-wp.x, dz=pp.z-wp.z;
-                if(dx*dx+dz*dz<TORII_TRIGGER_RADIUS*TORII_TRIGGER_RADIUS){
-                  this.questSys.setFlag("reachedTorii",true);
-                  this.questSys.addObjective("Heed the Shrine Warden warning");
-                  this.questSys.addLog("Reached a torii gate. The Shrine Wardens are watching.");
-                  this.questSys.setStage("q4_shrine_warning",10);
-                  this.questSys.changeRep("wardens",-5);
-                  this.ui.showToast("The air feels heavy near the torii. You are being watched.",3.0);
-                }
+          let found=false;
+          // Check worldspace POIs (heightmap mode)
+          if(this.useHeightmap && this.worldspace){
+            for(const poi of this.worldspace.pois){
+              if(poi.type==="torii"){
+                const dx=pp.x-poi.world.x, dz=pp.z-poi.world.z;
+                if(dx*dx+dz*dz<TORII_TRIGGER_RADIUS*TORII_TRIGGER_RADIUS){ found=true; break; }
               }
-            });
+            }
+          }
+          // Also check tile-based POIs (legacy/fallback)
+          if(!found){
+            for(const [,tile] of this.world.tiles){
+              tile.g.traverse(child=>{
+                if(child.userData?.poi==="Silent Torii" && !found){
+                  const wp=new THREE.Vector3();
+                  child.getWorldPosition(wp);
+                  const dx=pp.x-wp.x, dz=pp.z-wp.z;
+                  if(dx*dx+dz*dz<TORII_TRIGGER_RADIUS*TORII_TRIGGER_RADIUS){ found=true; }
+                }
+              });
+            }
+          }
+          if(found){
+            this.questSys.setFlag("reachedTorii",true);
+            this.questSys.addObjective("Heed the Shrine Warden warning");
+            this.questSys.addLog("Reached a torii gate. The Shrine Wardens are watching.");
+            this.questSys.setStage("q4_shrine_warning",10);
+            this.questSys.changeRep("wardens",-5);
+            this.ui.showToast("The air feels heavy near the torii. You are being watched.",3.0);
           }
         }
       }
@@ -3051,22 +3218,35 @@ class Game{
         if(this._railCheckTimer>2.0){
           this._railCheckTimer=0;
           const pp=this.player.pos;
-          for(const [,tile] of this.world.tiles){
-            tile.g.traverse(child=>{
-              if((child.userData?.poi==="Collapsed Rail Station"||child.userData?.poi==="Destroyed Railway") && !this.questSys.getFlag("reachedRailStation")){
-                const wp=new THREE.Vector3();
-                child.getWorldPosition(wp);
-                const dx=pp.x-wp.x, dz=pp.z-wp.z;
-                if(dx*dx+dz*dz<RAIL_TRIGGER_RADIUS*RAIL_TRIGGER_RADIUS){
-                  this.questSys.setFlag("reachedRailStation",true);
-                  this.questSys.completeObjective("Investigate radio signals near the rail stations");
-                  this.questSys.addObjective("Report findings to Guard Kenji");
-                  this.questSys.addLog("Reached a rail station. Faint coded radio pings detected — the Rail Ghost Union is here.");
-                  this.questSys.setStage("q3_rail_whisper",20);
-                  this.ui.showToast("Radio static crackles. Coded pings echo in the tunnels. Someone is out here.",3.0);
-                }
+          let railFound=false;
+          // Check worldspace POIs (heightmap mode)
+          if(this.useHeightmap && this.worldspace){
+            for(const poi of this.worldspace.pois){
+              if(poi.type==="rail"){
+                const dx=pp.x-poi.world.x, dz=pp.z-poi.world.z;
+                if(dx*dx+dz*dz<RAIL_TRIGGER_RADIUS*RAIL_TRIGGER_RADIUS){ railFound=true; break; }
               }
-            });
+            }
+          }
+          if(!railFound){
+            for(const [,tile] of this.world.tiles){
+              tile.g.traverse(child=>{
+                if((child.userData?.poi==="Collapsed Rail Station"||child.userData?.poi==="Destroyed Railway") && !railFound){
+                  const wp=new THREE.Vector3();
+                  child.getWorldPosition(wp);
+                  const dx=pp.x-wp.x, dz=pp.z-wp.z;
+                  if(dx*dx+dz*dz<RAIL_TRIGGER_RADIUS*RAIL_TRIGGER_RADIUS){ railFound=true; }
+                }
+              });
+            }
+          }
+          if(railFound){
+            this.questSys.setFlag("reachedRailStation",true);
+            this.questSys.completeObjective("Investigate radio signals near the rail stations");
+            this.questSys.addObjective("Report findings to Guard Kenji");
+            this.questSys.addLog("Reached a rail station. Faint coded radio pings detected — the Rail Ghost Union is here.");
+            this.questSys.setStage("q3_rail_whisper",20);
+            this.ui.showToast("Radio static crackles. Coded pings echo in the tunnels. Someone is out here.",3.0);
           }
         }
       }

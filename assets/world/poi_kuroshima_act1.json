@@ -115,6 +115,96 @@
         "z": 120.3
       },
       "notes": "Abandoned corrugated-iron shack. Scavengeable shelter near the forest edge."
+    },
+    {
+      "id": "road_sign_stop_01",
+      "name": "Rusted Stop Sign",
+      "type": "road_sign",
+      "world": { "x": 15.2, "z": 115.4 },
+      "signVariant": "stop",
+      "tilt": 12,
+      "notes": "Faded 止まれ sign near vault exit road. Bullet holes peppering the face."
+    },
+    {
+      "id": "road_sign_noentry_01",
+      "name": "Irradiated No Entry",
+      "type": "road_sign",
+      "world": { "x": 140.5, "z": 50.8 },
+      "signVariant": "no_entry",
+      "tilt": -8,
+      "notes": "No Entry sign at the edge of the Coastal Works radiation zone. Hand-painted skull added."
+    },
+    {
+      "id": "road_sign_speed_01",
+      "name": "Bent Speed Limit",
+      "type": "road_sign",
+      "world": { "x": -30.0, "z": -20.5 },
+      "signVariant": "speed_limit",
+      "tilt": 25,
+      "notes": "Speed limit sign near rail station approach, heavily bent from blast wave."
+    },
+    {
+      "id": "road_sign_caution_01",
+      "name": "Scorched Caution Sign",
+      "type": "road_sign",
+      "world": { "x": 60.3, "z": -60.7 },
+      "signVariant": "caution",
+      "tilt": -15,
+      "notes": "Warning triangle half-melted, still standing on the ridge road."
+    },
+    {
+      "id": "road_sign_deadend_01",
+      "name": "Wasteland Dead End",
+      "type": "road_sign",
+      "world": { "x": -70.2, "z": 250.0 },
+      "signVariant": "dead_end",
+      "tilt": 30,
+      "notes": "Dead End marker near the metro ruins. Someone scrawled 'TURN BACK' in kanji."
+    },
+    {
+      "id": "road_sign_direction_01",
+      "name": "Collapsed Direction Post",
+      "type": "road_sign",
+      "world": { "x": 30.0, "z": 35.0 },
+      "signVariant": "direction",
+      "tilt": 45,
+      "notes": "Direction sign at the shrine outpost crossroads, nearly toppled over."
+    },
+    {
+      "id": "road_sign_railroad_01",
+      "name": "Overgrown Railroad Crossing",
+      "type": "road_sign",
+      "world": { "x": -45.0, "z": -42.0 },
+      "signVariant": "railroad",
+      "tilt": 5,
+      "notes": "Railroad crossing sign near the collapsed rail station entrance."
+    },
+    {
+      "id": "road_sign_yield_01",
+      "name": "Crumbling Yield Sign",
+      "type": "road_sign",
+      "world": { "x": 75.0, "z": -150.0 },
+      "signVariant": "yield",
+      "tilt": -20,
+      "notes": "Yield sign along the southern ridge road, half-buried in ash."
+    },
+    {
+      "id": "road_sign_guide_01",
+      "name": "Faded Guide Board",
+      "type": "road_sign",
+      "world": { "x": -10.0, "z": 90.0 },
+      "signVariant": "guide_board",
+      "tilt": 8,
+      "notes": "Large overhead guide board, destinations barely legible through soot and rust."
+    },
+    {
+      "id": "road_sign_slowdown_01",
+      "name": "Bullet-riddled Slow Down",
+      "type": "road_sign",
+      "world": { "x": 100.5, "z": -90.3 },
+      "signVariant": "slow_down",
+      "tilt": -10,
+      "notes": "Slow Down sign used for target practice by wastelanders. Still standing."
     }
   ]
 }

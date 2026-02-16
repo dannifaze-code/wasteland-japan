@@ -122,9 +122,74 @@ export function buildOutpost(scene, worldRef) {
   plaque.position.set(-3, 2.5, -10);
   g.add(plaque);
 
+  // --- Outpost banner (flag on a pole, tinted by hostility) ---
+  const bannerPoleMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9 });
+  const bannerPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.2, 6), bannerPoleMat);
+  bannerPole.position.set(6, 1.6, -10);
+  bannerPole.castShadow = true;
+  g.add(bannerPole);
+
+  const bannerMat = new THREE.MeshStandardMaterial({
+    color: 0x5588ff, emissive: 0x3366dd, emissiveIntensity: 0.6, roughness: 0.5
+  });
+  const bannerFlag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.7), bannerMat);
+  bannerFlag.position.set(6.65, 2.8, -10);
+  bannerFlag.castShadow = true;
+  g.add(bannerFlag);
+
   scene.add(g);
 
-  return { group: g, bedroll, board, fireLight };
+  return { group: g, bedroll, board, fireLight, flame, bannerFlag, bannerMat };
+}
+
+// ---- Default visual values (used for hostile/neutral transitions) ----
+const FIRE_LIGHT_INTENSITY_NORMAL = 2.5;
+const FIRE_LIGHT_INTENSITY_HOSTILE = 0.8;
+const BANNER_COLOR_NORMAL = 0x5588ff;
+const BANNER_EMISSIVE_NORMAL = 0x3366dd;
+const BANNER_COLOR_HOSTILE = 0x1a1a2a;
+const BANNER_EMISSIVE_HOSTILE = 0x110011;
+
+/**
+ * Check whether the Shrine Outpost should be hostile to the player.
+ * Conditions: player betrayed Wardens in Q5 OR warden reputation ≤ -50.
+ */
+export function isOutpostHostile(questSys) {
+  if (questSys.getFlag("q5_betrayed")) return true;
+  if (questSys.getRep("wardens") <= -50) return true;
+  return false;
+}
+
+/**
+ * Check whether the outpost has recovered from hostility.
+ * Recovery: reputation above -10 AND not permanently betrayed (betrayal can be forgiven when rep recovers).
+ */
+export function isOutpostRecovered(questSys) {
+  return questSys.getRep("wardens") > -10;
+}
+
+/**
+ * Apply hostile visual changes to the outpost (darker banner, dimmer campfire).
+ */
+export function applyHostileVisuals(outpostRef) {
+  if (!outpostRef) return;
+  if (outpostRef.fireLight) outpostRef.fireLight.intensity = FIRE_LIGHT_INTENSITY_HOSTILE;
+  if (outpostRef.bannerMat) {
+    outpostRef.bannerMat.color.setHex(BANNER_COLOR_HOSTILE);
+    outpostRef.bannerMat.emissive.setHex(BANNER_EMISSIVE_HOSTILE);
+  }
+}
+
+/**
+ * Restore neutral visual state to the outpost.
+ */
+export function applyNeutralVisuals(outpostRef) {
+  if (!outpostRef) return;
+  if (outpostRef.fireLight) outpostRef.fireLight.intensity = FIRE_LIGHT_INTENSITY_NORMAL;
+  if (outpostRef.bannerMat) {
+    outpostRef.bannerMat.color.setHex(BANNER_COLOR_NORMAL);
+    outpostRef.bannerMat.emissive.setHex(BANNER_EMISSIVE_NORMAL);
+  }
 }
 
 /**

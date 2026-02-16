@@ -101,6 +101,8 @@ export class Quest {
 
   /** Vendor price multiplier based on faction rep. Friendly = cheaper, hostile = more expensive. */
   vendorMultiplier(faction) {
+    // Outpost hostility: betrayal forces 40% markup for wardens
+    if (faction === "wardens" && this.getFlag("q5_betrayed")) return 1.4;
     const r = this.getRep(faction);
     if (r >= 50) return 0.8;
     if (r >= 20) return 0.9;

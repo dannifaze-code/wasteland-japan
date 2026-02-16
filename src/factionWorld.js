@@ -237,6 +237,29 @@ export class FactionWorld {
       td.squads.push(unit);
       this.allUnits.push(unit);
     }
+
+    // --- Heat ≥ 30: spawn +1 bonus patrol squad for this faction ---
+    const heatVal = this.questSys.getHeat(faction);
+    if (heatVal >= 30 && this.allUnits.length < MAX_SQUADS * SQUAD_SIZE_MAX + SQUAD_SIZE_MAX && rng() < 0.5) {
+      const bonusId = `sq_${this._nextSquadId++}`;
+      const bonusSize = SQUAD_SIZE_MIN;
+      const isHunter = heatVal >= 60;
+      for (let i = 0; i < bonusSize; i++) {
+        const role = rng() < 0.5 ? "rifle" : "melee";
+        const unit = makeFactionUnit(faction, role, bonusId, tileKey);
+        if (isHunter) unit.userData.hunterSquad = true;
+
+        const wx = tx * tileSize + (rng() - 0.5) * tileSize * 0.7;
+        const wz = tz * tileSize + (rng() - 0.5) * tileSize * 0.7;
+        unit.position.set(wx, 0, wz);
+        unit.userData.patrolOrigin = new THREE.Vector3(wx, 0, wz);
+        unit.userData.patrolAngle = rng() * Math.PI * 2;
+
+        this.group.add(unit);
+        td.squads.push(unit);
+        this.allUnits.push(unit);
+      }
+    }
   }
 
   onTileDisposed(tileKey) {
@@ -391,13 +414,14 @@ export class FactionWorld {
         }
       }
 
-      // Rep-based hostility toward player
+      // Rep-based hostility toward player + heat-based hunter aggression
       if (aud.state === "patrol" && playerPos) {
         const pdx = playerPos.x - a.position.x, pdz = playerPos.z - a.position.z;
         const pdist2 = pdx * pdx + pdz * pdz;
         if (pdist2 < SKIRMISH_RADIUS * SKIRMISH_RADIUS) {
           const rep = this.questSys.getRep(aud.faction);
-          if (rep <= REP_HOSTILE) {
+          const heat = this.questSys.getHeat(aud.faction);
+          if (rep <= REP_HOSTILE || (aud.hunterSquad && heat >= 80)) {
             aud.state = "engage";
             aud._targetRef = { userData: { isPlayer: true, hp: 1 } };
             aud.targetId = "__player__";

@@ -16,6 +16,12 @@ export class Quest {
       wardens: 0,
       rail: 0
     };
+
+    // Faction heat: 0–100, starts at 0
+    this.heat = {
+      wardens: 0,
+      rail: 0
+    };
   }
 
   // ---- Stage API ----
@@ -101,6 +107,26 @@ export class Quest {
     return 1.0;
   }
 
+  // ---- Heat API ----
+  changeHeat(faction, amount) {
+    if (this.heat[faction] !== undefined) {
+      this.heat[faction] = Math.max(0, Math.min(100, this.heat[faction] + amount));
+    }
+  }
+
+  getHeat(faction) {
+    return this.heat[faction] || 0;
+  }
+
+  /** Very slow decay toward 0. Call each frame with dt in seconds. */
+  decayHeat(dt) {
+    for (const f of Object.keys(this.heat)) {
+      if (this.heat[f] > 0) {
+        this.heat[f] = Math.max(0, this.heat[f] - dt * 0.5);
+      }
+    }
+  }
+
   // ---- Serialization ----
   toSave() {
     return {
@@ -108,7 +134,8 @@ export class Quest {
       flags: { ...this.flags },
       objectives: this.objectives.map(o => ({ ...o })),
       log: this.log.map(l => ({ ...l })),
-      rep: { ...this.rep }
+      rep: { ...this.rep },
+      heat: { ...this.heat }
     };
   }
 
@@ -119,6 +146,7 @@ export class Quest {
     if (data.objectives) this.objectives = data.objectives.map(o => ({ ...o }));
     if (data.log) this.log = data.log.map(l => ({ ...l }));
     if (data.rep) this.rep = { vault: 0, wardens: 0, rail: 0, ...data.rep };
+    if (data.heat) this.heat = { wardens: 0, rail: 0, ...data.heat };
   }
 
   // ---- Debug ----
@@ -128,6 +156,7 @@ export class Quest {
     console.log("Flags:", JSON.stringify(this.flags));
     console.log("Objectives:", JSON.stringify(this.objectives));
     console.log("Rep:", JSON.stringify(this.rep));
+    console.log("Heat:", JSON.stringify(this.heat));
     console.log("Log:", this.log.map(l => l.text));
     console.log("========================");
   }

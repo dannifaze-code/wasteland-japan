@@ -293,7 +293,7 @@ function defaultSave(){
       radiation:0,armor:0,xp:0,level:1,skillPoints:0,
       skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
     },
-    world:{seed:811, useHeightmap:true, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0}}}
+    world:{seed:811, useHeightmap:true, quest:{step:0,log:["Leave Vault 811"]}, questSys:{stages:{},flags:{},objectives:[],log:[],rep:{vault:0,wardens:0,rail:0},heat:{wardens:0,rail:0}}}
   };
 }
 function loadSave(){
@@ -2317,6 +2317,8 @@ class Game{
       this.player.hp=Math.min(this.player.hp,this.player.hpMax);
       this.ui.showToast(`Level Up! Lv.${this.player.level} (+1 Skill Point)`,2.5);
     }
+    // Killing a faction unit adds +5 heat
+    this.questSys.changeHeat(ud.faction, 5);
     // Loot drop (low chance)
     if(!ud.lootDone){
       ud.lootDone=true;
@@ -3271,6 +3273,8 @@ class Game{
       this.factionWorld.setVisible(true);
       const loadedKeys=new Set(this.world.tiles.keys());
       this.factionWorld.update(dt, this.player.pos, loadedKeys, this.useHeightmap?this.terrain:null);
+      // Decay faction heat slowly over time
+      this.questSys.decayHeat(dt);
       // Biome-based fog density
       const tx=Math.floor(this.player.pos.x/this.world.tileSize);
       const tz=Math.floor(this.player.pos.z/this.world.tileSize);

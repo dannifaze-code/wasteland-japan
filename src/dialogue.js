@@ -1,6 +1,20 @@
 // Dialogue System for Wasteland Japan — Vault 811
 // Manages dialogue trees with branching choices, skill checks, quest hooks, and vendor hooks.
 
+// ---- Inventory Helpers ----
+function removeItem(player, itemId, qty) {
+  const item = player.inv.find(x => x.id === itemId);
+  if (!item) return;
+  item.qty = (item.qty || 1) - qty;
+  if (item.qty <= 0) player.inv.splice(player.inv.indexOf(item), 1);
+}
+
+function addItem(player, itemId, qty) {
+  const existing = player.inv.find(x => x.id === itemId);
+  if (existing) existing.qty = (existing.qty || 1) + qty;
+  else player.inv.push({ id: itemId, qty });
+}
+
 // ---- Dialogue Tree Data ----
 // Each dialogue tree is keyed by NPC dialogueId.
 // Nodes: { id, speaker, text, choices: [{ text, next, condition?, effect? }] }
@@ -141,11 +155,8 @@ export const DialogueTrees = {
           { text: "[End]", next: null }
         ],
         effect: (player, game) => {
-          const scrap = player.inv.find(x => x.id === "scrap");
-          if (scrap) { scrap.qty = (scrap.qty || 1) - 2; if (scrap.qty <= 0) player.inv.splice(player.inv.indexOf(scrap), 1); }
-          const existing = player.inv.find(x => x.id === "stim");
-          if (existing) existing.qty = (existing.qty || 1) + 1;
-          else player.inv.push({ id: "stim", qty: 1 });
+          removeItem(player, "scrap", 2);
+          addItem(player, "stim", 1);
           game.ui.showToast("Received: Field Stim");
         }
       },
@@ -158,13 +169,9 @@ export const DialogueTrees = {
           { text: "[End]", next: null }
         ],
         effect: (player, game) => {
-          const scrap = player.inv.find(x => x.id === "scrap");
-          if (scrap) { scrap.qty = (scrap.qty || 1) - 1; if (scrap.qty <= 0) player.inv.splice(player.inv.indexOf(scrap), 1); }
-          const circuits = player.inv.find(x => x.id === "circuits");
-          if (circuits) { circuits.qty = (circuits.qty || 1) - 1; if (circuits.qty <= 0) player.inv.splice(player.inv.indexOf(circuits), 1); }
-          const existing = player.inv.find(x => x.id === "radaway");
-          if (existing) existing.qty = (existing.qty || 1) + 1;
-          else player.inv.push({ id: "radaway", qty: 1 });
+          removeItem(player, "scrap", 1);
+          removeItem(player, "circuits", 1);
+          addItem(player, "radaway", 1);
           game.ui.showToast("Received: Rad-Away");
         }
       },
@@ -337,11 +344,8 @@ export const DialogueTrees = {
           { text: "[End]", next: null }
         ],
         effect: (player, game) => {
-          const scrap = player.inv.find(x => x.id === "scrap");
-          if (scrap) { scrap.qty = (scrap.qty || 1) - 1; if (scrap.qty <= 0) player.inv.splice(player.inv.indexOf(scrap), 1); }
-          const existing = player.inv.find(x => x.id === "cloth");
-          if (existing) existing.qty = (existing.qty || 1) + 2;
-          else player.inv.push({ id: "cloth", qty: 2 });
+          removeItem(player, "scrap", 1);
+          addItem(player, "cloth", 2);
           game.ui.showToast("Received: Tattered Cloth x2");
         }
       },

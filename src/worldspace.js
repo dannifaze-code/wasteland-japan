@@ -2,6 +2,7 @@
 // deterministic POI markers/triggers at correct terrain heights.
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
+import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/loaders/FBXLoader.js";
 import { ASSET_BASE } from "./assets.js";
 
 // Mapping from signVariant → texture PNG filename under textures/environment/roads_signs/
@@ -258,29 +259,49 @@ export class Worldspace {
   }
 
   _placeIronShack(poi, x, y, z) {
-    const g = new THREE.Group();
-    const matIron = new THREE.MeshStandardMaterial({ color: 0x6b5b4f, roughness: 0.85, metalness: 0.35 });
-    const matRust = new THREE.MeshStandardMaterial({ color: 0x5d3b2a, roughness: 1.0, metalness: 0.1 });
-    // Main shack body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 4), matIron);
-    body.position.y = 1.5;
-    body.castShadow = true;
-    body.receiveShadow = true;
-    g.add(body);
-    // Corrugated roof (slightly angled)
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.2, 4.6), matRust);
-    roof.position.set(0, 3.2, 0);
-    roof.rotation.z = 0.08;
-    roof.castShadow = true;
-    g.add(roof);
-    // Door opening
-    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.15), matRust);
-    doorFrame.position.set(0, 1.1, 2.05);
-    g.add(doorFrame);
-    g.position.set(x, y, z);
-    g.userData.poi = poi.name;
-    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    this.poiGroup.add(g);
+    const loader = new FBXLoader();
+    const texLoader = this._texLoader;
+    const modelPath = `${ASSET_BASE}/models/environment/buildings/小屋トタン.fbx`;
+    const poiGroup = this.poiGroup;
+
+    // Build a PBR material from the shipped texture maps.
+    // roughness/metalness set to 1.0 so texture maps drive the values directly.
+    const mat = new THREE.MeshStandardMaterial({ roughness: 1.0, metalness: 1.0 });
+
+    const albedoPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_AlbedoTransparency.1001.png`;
+    const metallicPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_MetallicSmoothness.1001.png`;
+    const normalPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_Normal.1001.png`;
+
+    texLoader.load(albedoPath, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+      mat.needsUpdate = true;
+    });
+    texLoader.load(metallicPath, (tex) => {
+      mat.metalnessMap = tex;
+      mat.roughnessMap = tex;
+      mat.needsUpdate = true;
+    });
+    texLoader.load(normalPath, (tex) => {
+      mat.normalMap = tex;
+      mat.needsUpdate = true;
+    });
+
+    loader.load(modelPath, (fbx) => {
+      fbx.traverse((child) => {
+        if (child.isMesh) {
+          child.material = mat;
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      fbx.position.set(x, y, z);
+      fbx.userData.poi = poi.name;
+      poiGroup.add(fbx);
+    }, undefined, (err) => {
+      console.warn("Worldspace: failed to load iron shack FBX", err);
+    });
+
     this._addDebugMarker(poi, x, y, z, 0x8b6914);
   }
 

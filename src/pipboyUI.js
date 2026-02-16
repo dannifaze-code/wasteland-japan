@@ -340,8 +340,23 @@ function _renderFactions(c, game) {
         </div>
         <span style="font-size:11px;opacity:.5;min-width:30px">+100</span>
       </div>
-      <div class="stat-line" style="font-size:12px">Rep: ${rep} (${repLabel}) \u2022 Vendor prices: x${mult.toFixed(1)}</div>
-    </div>`;
+      <div class="stat-line" style="font-size:12px">Rep: ${rep} (${repLabel}) \u2022 Vendor prices: x${mult.toFixed(1)}</div>`;
+
+    // Heat bar (wardens and rail only)
+    const heat = qs.getHeat(factionKey);
+    if (heat !== undefined && factionKey !== "vault") {
+      const heatPct = Math.min(heat, 100);
+      const heatColor = heat >= 80 ? "#ff4444" : heat >= 60 ? "#ff8844" : heat >= 30 ? "#ffcc44" : "rgba(50,255,80,.5)";
+      html += `<div class="rep-bar-wrap" style="margin-top:2px">
+        <span style="font-size:11px;opacity:.5;min-width:30px">Heat</span>
+        <div class="rep-bar">
+          <div style="position:absolute;top:0;left:0;height:100%;width:${heatPct}%;background:${heatColor};border-radius:3px"></div>
+        </div>
+        <span style="font-size:11px;opacity:.5;min-width:30px">${Math.round(heat)}</span>
+      </div>`;
+    }
+
+    html += `</div>`;
   }
 
   // POI ownership / war state

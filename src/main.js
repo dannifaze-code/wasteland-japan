@@ -1534,7 +1534,7 @@ class Player{
     this._playingAttack=true;
     this._attackAnimName=animName||"attack";
     this._prevAnimState=""; // force crossfade
-    if(this._prevFPAnimState) this._prevFPAnimState=""; // force FP crossfade too
+    this._prevFPAnimState=""; // force FP crossfade too
   }
   weight(){return invWeight(this.inv);}
   effectiveMaxHP(){

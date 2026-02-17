@@ -17,6 +17,7 @@ import { HeightmapTerrain, MAP_SIZE, MAP_HALF, HEIGHT_SCALE } from "./terrain.js
 import { Worldspace } from "./worldspace.js";
 import { FactionWorld, FACTIONS, FACTION_POIS } from "./factionWorld.js";
 import { AssetManager } from "./engine/AssetManager.js";
+import { AssetRegistry } from "./engine/AssetRegistry.js";
 import { PropFactory } from "./game/world/PropFactory.js";
 import { WorldPropDefs } from "./game/assets/worldProps.js";
 
@@ -1547,6 +1548,11 @@ class Game{
 
     // Asset pipeline + prop factory
     this.assetManager=new AssetManager();
+    this.assetRegistry=new AssetRegistry();
+    this.assetRegistry.load().then(()=>{
+      if(this.assetRegistry.error) this.toast(this.assetRegistry.error);
+      this.assetRegistry.printSummary();
+    }).catch(e=>console.warn("[AssetRegistry]",e));
     this.propFactory=new PropFactory(this.assetManager);
     this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
 
@@ -1556,7 +1562,7 @@ class Game{
     this.useHeightmap=this.save.world.useHeightmap!==false;
     this.terrain=new HeightmapTerrain(this.scene,"./assets/world/heightmap_kuroshima_1024.png");
     this.terrain.setVisible(false);
-    this.worldspace=new Worldspace(this.scene,this.terrain,"./assets/world/poi_kuroshima_act1.json",{world:this.world});
+    this.worldspace=new Worldspace(this.scene,this.terrain,"./assets/world/poi_kuroshima_act1.json",{world:this.world,registry:this.assetRegistry});
     this.worldspace.setVisible(false);
 
     this.npcMgr=new NPCManager(this.scene);

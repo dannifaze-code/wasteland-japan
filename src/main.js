@@ -3576,9 +3576,19 @@ class Game{
 }
 
 // Boot
-const game=new Game();
+let game;
+try{
+  game=new Game();
+  // Hide loading overlay once the game is up
+  const loadEl=document.getElementById("loading");
+  if(loadEl) loadEl.style.display="none";
+}catch(err){
+  console.error("Game failed to start:",err);
+  const loadEl=document.getElementById("loading");
+  if(loadEl){loadEl.className="error";const sub=loadEl.querySelector(".sub");if(sub)sub.textContent="Error: "+err.message+" — try clearing your cache and refreshing.";}
+}
 
 // Start audio on first gesture (optional)
 window.addEventListener("click", async ()=>{
-  await game.ensureAudio();
+  if(game) await game.ensureAudio();
 }, {once:true});

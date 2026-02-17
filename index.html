@@ -5,10 +5,25 @@
   <title>Wasteland Japan — Vault 811</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    html,body{margin:0;height:100%;overflow:hidden;background:#050608;}
+    html,body{margin:0;height:100%;overflow:hidden;background:#050608;color:#d8e0f0;font-family:monospace;}
+    #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:9999;pointer-events:none;}
+    #loading .title{font-size:22px;font-weight:900;letter-spacing:2px;opacity:.85;}
+    #loading .sub{font-size:13px;opacity:.5;}
+    #loading.error .sub{color:#ff6644;opacity:1;}
   </style>
 </head>
 <body>
+  <div id="loading"><div class="title">WASTELAND JAPAN</div><div class="sub">Loading…</div></div>
   <script type="module" src="./src/main.js"></script>
+  <script>
+    // If the ES module fails to load (CDN down, stale cache, network error),
+    // the module script fires an error event. Show the error instead of a
+    // silent black screen.
+    var modScript=document.querySelector('script[type="module"]');
+    if(modScript) modScript.addEventListener("error", function(){
+      var el=document.getElementById("loading");
+      if(el){el.className="error";var sub=el.querySelector(".sub");if(sub)sub.textContent="Failed to load game modules. Try clearing your browser cache and refreshing.";}
+    });
+  </script>
 </body>
 </html>

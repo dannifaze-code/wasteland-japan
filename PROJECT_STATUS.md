@@ -21,6 +21,17 @@ This file tracks what has been added to the game so that future development has 
 - [x] Weight-based inventory
 - [x] Save / Load via localStorage (version key: `wasteland_japan_vault811_save_v1`)
 
+## Player Character Model
+- [x] Meshy AI rigged GLB character model (`Meshy_AI_Character_output.glb`)
+- [x] Skeletal animations: idle, walking, running, run_03, attack, skill_03, dead
+- [x] Auto-scaled to 1.75m target height with bounding box measurement
+- [x] Correct model orientation (180° Y rotation baked into model)
+- [x] Third-person: full body with weapon bone attachment (hand bones)
+- [x] First-person: arms-only view with hidden head/spine/leg bones, scaled to 50% for FP viewport
+- [x] Animation state machine with crossfade transitions (idle → walk → run)
+- [x] Katana melee attack animations (attack + skill_03 variant)
+- [x] Crouch visual: Y-scale compression from idle animation
+
 ## World
 - [x] Vault 811 interior (starting area)
 - [x] Vault door open animation + exit sequence
@@ -59,9 +70,15 @@ This file tracks what has been added to the game so that future development has 
 ## Items
 - Consumables: Field Stim, Ration Pack, Rad-Away
 - Junk/Materials: Scrap Metal, Tattered Cloth, Circuit Board
-- Weapons: Pistol, Rifle, Shotgun
+- Weapons: Pistol, Rifle, Shotgun, Katana (melee)
 - Armor: Tactical Vest, Steel Plating
 - Mods: Scope, Extended Mag
+
+## Asset Pipeline
+- `allfilestomove/` staging folder cleared — all assets moved to final locations
+- Character model & animations: `assets/models/characters/player/`
+- Asset registry: `src/engine/registry/assets.manifest.json`
+- `AssetManager.loadGLTF()` for loading rigged models with animation clips
 
 ## Crafting Recipes
 - Field Stim (Scrap + Cloth)

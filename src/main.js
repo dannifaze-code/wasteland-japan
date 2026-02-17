@@ -16,6 +16,9 @@ import { CompanionManager, CompanionDefs } from "./companion.js";
 import { HeightmapTerrain, MAP_SIZE, MAP_HALF, HEIGHT_SCALE } from "./terrain.js";
 import { Worldspace } from "./worldspace.js";
 import { FactionWorld, FACTIONS, FACTION_POIS } from "./factionWorld.js";
+import { AssetManager } from "./engine/AssetManager.js";
+import { PropFactory } from "./game/world/PropFactory.js";
+import { WorldPropDefs } from "./game/assets/worldProps.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -428,8 +431,9 @@ class Particles{
 
 // ---------------- World streaming ----------------
 class World{
-  constructor(scene, seed=811){
+  constructor(scene, seed=811, propFactory=null){
     this.scene=scene; this.seed=seed;
+    this.propFactory=propFactory;
     this.tileSize=90; this.radius=1;
     this.tiles=new Map();
     this.static=new THREE.Group();
@@ -573,9 +577,26 @@ class World{
         else if(variant<0.66) poi=this.makeShrine(rng);
         else poi=this.makeStoneLantern(rng);
       }else if(biome===0){
-        poi=this.makeStation(rng);
+        const cityVariant=rng();
+        if(cityVariant<0.3){
+          // IRON_SHACK — try real model, fallback to primitive
+          poi=this._spawnProp("ironShack","Iron Shack",rng);
+          if(!poi) poi=this.makeStation(rng);
+        }else if(cityVariant<0.55){
+          // ROAD_SIGNS — try real model, fallback to primitive
+          poi=this._spawnProp("roadSigns","Road Signs",rng);
+          if(!poi) poi=this.makeStation(rng);
+        }else{
+          poi=this.makeStation(rng);
+        }
       }else{
-        poi=this.makeIndustrial(rng);
+        const indVariant=rng();
+        if(indVariant<0.3){
+          poi=this._spawnProp("ironShack","Iron Shack",rng);
+          if(!poi) poi=this.makeIndustrial(rng);
+        }else{
+          poi=this.makeIndustrial(rng);
+        }
       }
       g.add(poi);
     }
@@ -762,6 +783,19 @@ class World{
     g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
     g.rotation.y=rng()*Math.PI*2;
     g.traverse(o=>{if(o.isMesh) o.castShadow=true;});
+    return g;
+  }
+  _spawnProp(key,poiLabel,rng){
+    if(!this.propFactory) return null;
+    const model=this.propFactory.spawn(key);
+    if(!model) return null;
+    const def=WorldPropDefs[key];
+    const g=new THREE.Group();
+    g.userData.poi=poiLabel;
+    g.add(model);
+    if(def&&def.yOffset) model.position.y=def.yOffset;
+    g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
+    g.rotation.y=(def&&def.rotationY?def.rotationY:0)+rng()*Math.PI*2;
     return g;
   }
   makeEnemy(kind){
@@ -1510,7 +1544,13 @@ class Game{
     this.scene.add(this.player.model);
 
     this.vault=new Vault(this.scene);
-    this.world=new World(this.scene,this.save.world.seed);
+
+    // Asset pipeline + prop factory
+    this.assetManager=new AssetManager();
+    this.propFactory=new PropFactory(this.assetManager);
+    this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
+
+    this.world=new World(this.scene,this.save.world.seed,this.propFactory);
 
     // Heightmap terrain (replaces tile streaming for outside)
     this.useHeightmap=this.save.world.useHeightmap!==false;

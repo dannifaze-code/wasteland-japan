@@ -1552,7 +1552,7 @@ class Game{
     this.assetRegistry.load().then(()=>{
       if(this.assetRegistry.error) this.toast(this.assetRegistry.error);
       this.assetRegistry.printSummary();
-    }).catch(()=>{});
+    }).catch(e=>console.warn("[AssetRegistry]",e));
     this.propFactory=new PropFactory(this.assetManager);
     this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
 

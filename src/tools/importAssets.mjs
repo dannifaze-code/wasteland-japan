@@ -101,7 +101,11 @@ function classify(extension) {
 
 /**
  * Infer a sub-folder from the file's path segments and name.
- * Returns the keyword-based sub-folder or a sensible default.
+ * Returns the keyword-based sub-folder or a sensible default:
+ *   models  → "props"
+ *   textures → "props"
+ *   audio   → "sfx"
+ *   data    → "poi"  (JSON files land in assets/maps/poi)
  */
 function inferSub(category, relParts, baseName) {
   const haystack = [...relParts, baseName].join(" ").toLowerCase();

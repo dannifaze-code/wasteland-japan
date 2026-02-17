@@ -1352,6 +1352,61 @@ class Player{
   }
 
   /**
+   * Add an animation clip to the character model after it has been applied.
+   * This allows animations to be loaded incrementally without blocking model display.
+   * @param {string} name     Animation name (e.g. "walking", "running")
+   * @param {THREE.AnimationClip[]} clips  Array of clips from the loaded GLB
+   * @param {number} [loopMode]  THREE.LoopRepeat or THREE.LoopOnce
+   */
+  addAnimationClip(name, clips, loopMode){
+    if(!this._charModelReady||!this._mixer) return;
+    if(!clips||clips.length===0) return;
+    if(this._actions[name]) return; // already registered
+    const clip=clips[0];
+    clip.name=name;
+    const action=this._mixer.clipAction(clip);
+    action.clampWhenFinished=true;
+    if(loopMode!==undefined) action.loop=loopMode;
+    this._actions[name]=action;
+
+    // Synthesize crouch from idle when idle is added late
+    if(name==="idle" && !this._actions.crouch){
+      const crouchClip=clip.clone();
+      crouchClip.name="crouch";
+      const crouchAction=this._mixer.clipAction(crouchClip);
+      crouchAction.clampWhenFinished=true;
+      crouchAction.loop=THREE.LoopRepeat;
+      crouchAction.timeScale=0.7;
+      this._actions.crouch=crouchAction;
+    }
+
+    // If this is idle and nothing is playing yet, start it
+    if(name==="idle" && !this._currentAction){
+      action.play();
+      this._currentAction=action;
+      this._prevAnimState="idle";
+    }
+
+    // Also add to FP arms mixer if available
+    const fpAnimNames=["idle","walking","running","attack","skill03"];
+    if(this._fpArmsMixer && fpAnimNames.includes(name) && !this._fpArmsActions[name]){
+      const fpClip=clip.clone();
+      fpClip.name=name;
+      const fpAction=this._fpArmsMixer.clipAction(fpClip);
+      fpAction.clampWhenFinished=true;
+      if(loopMode!==undefined) fpAction.loop=loopMode;
+      this._fpArmsActions[name]=fpAction;
+
+      // If FP idle and nothing playing yet, start it
+      if(name==="idle" && !this._currentFPAction){
+        fpAction.play();
+        this._currentFPAction=fpAction;
+        this._prevFPAnimState="idle";
+      }
+    }
+  }
+
+  /**
    * Build first-person arms by cloning arm-related meshes from the character model.
    * Creates a clean FP arm view attached to the camera.
    */
@@ -1978,13 +2033,16 @@ class Game{
     // Asset pipeline + prop factory
     this.assetManager=new AssetManager();
     this.assetRegistry=new AssetRegistry();
+
+    // Eagerly start loading the Meshy AI player character model right away
+    // using known URLs — don't wait for the asset registry manifest.
+    this._loadPlayerCharacter();
+
     this.assetRegistry.load().then(()=>{
       if(this.assetRegistry.error) this.toast(this.assetRegistry.error);
       this.assetRegistry.printSummary();
       // Load katana model and PBR textures from registry
       this._loadKatanaAssets();
-      // Load new Meshy AI player character model and animations
-      this._loadPlayerCharacter();
     }).catch(e=>console.warn("[AssetRegistry]",e));
     this.propFactory=new PropFactory(this.assetManager);
     this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
@@ -2771,6 +2829,10 @@ class Game{
    * Load the Meshy AI character model and all animation clips, then apply
    * them to the player. The model replaces the procedural placeholder in
    * both first-person (arms) and third-person (full body) views.
+   *
+   * The base character model is applied immediately once loaded so it
+   * appears on screen as fast as possible. Animation clips are added
+   * incrementally as they finish loading — no Promise.all gate.
    */
   _loadPlayerCharacter(){
     const reg=this.assetRegistry;
@@ -2780,51 +2842,25 @@ class Game{
     const charUrl=(reg.getModel("player_character")||{}).url||"assets/models/characters/player/Meshy_AI_Character_output.glb";
 
     const animDefs={
-      idle:     (reg.getModel("player_anim_idle")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Idle_withSkin.glb",
-      walking:  (reg.getModel("player_anim_walking")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Walking_withSkin.glb",
-      running:  (reg.getModel("player_anim_running")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Running_withSkin.glb",
-      run03:    (reg.getModel("player_anim_run03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Run_03_withSkin.glb",
-      attack:   (reg.getModel("player_anim_attack")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Attack_withSkin.glb",
-      skill03:  (reg.getModel("player_anim_skill03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Skill_03_withSkin.glb",
-      dead:     (reg.getModel("player_anim_dead")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Dead_withSkin.glb",
+      idle:     {url:(reg.getModel("player_anim_idle")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Idle_withSkin.glb",    loop:THREE.LoopRepeat},
+      walking:  {url:(reg.getModel("player_anim_walking")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Walking_withSkin.glb",loop:THREE.LoopRepeat},
+      running:  {url:(reg.getModel("player_anim_running")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Running_withSkin.glb",loop:THREE.LoopRepeat},
+      run03:    {url:(reg.getModel("player_anim_run03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Run_03_withSkin.glb",  loop:THREE.LoopRepeat},
+      attack:   {url:(reg.getModel("player_anim_attack")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Attack_withSkin.glb", loop:THREE.LoopOnce},
+      skill03:  {url:(reg.getModel("player_anim_skill03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Skill_03_withSkin.glb",loop:THREE.LoopOnce},
+      dead:     {url:(reg.getModel("player_anim_dead")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Dead_withSkin.glb",     loop:THREE.LoopOnce},
     };
 
-    // Load the base character model with scene
-    const charPromise=mgr.loadGLTF("player_character",charUrl).catch(e=>{
-      console.warn("[PlayerChar] base model load failed:",e);
-      return null;
-    });
-
-    // Load all animation GLBs in parallel (each contains one animation clip with skin)
-    const animPromises={};
-    for(const[name,url] of Object.entries(animDefs)){
-      animPromises[name]=mgr.loadGLTF("player_anim_"+name,url).then(gltf=>{
-        return gltf.animations||[];
-      }).catch(e=>{
-        console.warn(`[PlayerChar] animation "${name}" load failed:`,e);
-        return [];
-      });
-    }
-
-    // Wait for everything to load
-    const animKeys=Object.keys(animPromises);
-    const animPromiseArr=animKeys.map(k=>animPromises[k]);
-
-    Promise.all([charPromise,...animPromiseArr]).then(([charGltf,...animResults])=>{
+    // Load the base character model — apply it as soon as it arrives
+    mgr.loadGLTF("player_character",charUrl).then(charGltf=>{
       if(!charGltf){
         console.warn("[PlayerChar] character model not available — keeping placeholder.");
         return;
       }
 
-      // Build animation clips object
-      const animClips={};
-      animKeys.forEach((name,i)=>{
-        animClips[name]=animResults[i];
-      });
-
-      // Apply to player
+      // Apply model immediately with empty animations so it appears on screen right away
       const oldParent=this.player.model.parent;
-      this.player.applyCharacterModel(charGltf.scene, animClips);
+      this.player.applyCharacterModel(charGltf.scene, {});
 
       // Re-add to scene if the parent changed
       if(oldParent && !this.player.model.parent){
@@ -2833,8 +2869,19 @@ class Game{
         this.scene.add(this.player.model);
       }
 
-      console.log("[PlayerChar] Meshy AI character loaded successfully with",
-        Object.keys(animClips).filter(k=>animClips[k].length>0).length, "animations.");
+      console.log("[PlayerChar] Meshy AI character model applied instantly. Loading animations…");
+
+      // Load each animation independently and add as it arrives
+      for(const[name,def] of Object.entries(animDefs)){
+        mgr.loadGLTF("player_anim_"+name,def.url).then(gltf=>{
+          const clips=gltf.animations||[];
+          this.player.addAnimationClip(name, clips, def.loop);
+        }).catch(e=>{
+          console.warn(`[PlayerChar] animation "${name}" load failed:`,e);
+        });
+      }
+    }).catch(e=>{
+      console.warn("[PlayerChar] base model load failed:",e);
     });
   }
 

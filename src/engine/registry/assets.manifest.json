@@ -29,23 +29,23 @@
     },
     "katana_material_height": {
       "url": "assets/textures/weapons/melee/katana_material_height.png",
-      "colorSpace": "sRGB"
+      "colorSpace": "linear"
     },
     "katana_material_metallic": {
       "url": "assets/textures/weapons/melee/katana_material_metallic.png",
-      "colorSpace": "sRGB"
+      "colorSpace": "linear"
     },
     "katana_material_mixed_ao": {
       "url": "assets/textures/weapons/melee/katana_material_mixed_ao.png",
-      "colorSpace": "sRGB"
+      "colorSpace": "linear"
     },
     "katana_material_normal_directx": {
       "url": "assets/textures/weapons/melee/katana_material_normal_directx.png",
-      "colorSpace": "sRGB"
+      "colorSpace": "linear"
     },
     "katana_material_roughness": {
       "url": "assets/textures/weapons/melee/katana_material_roughness.png",
-      "colorSpace": "sRGB"
+      "colorSpace": "linear"
     }
   },
   "audio": {},

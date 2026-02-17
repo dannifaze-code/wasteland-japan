@@ -1513,8 +1513,8 @@ class Player{
     this.weaponKick=isMelee?0.6:id==="shotgun"?0.8:id==="rifle"?0.3:0.45;
 
     if(isMelee){
-      // Melee swing — no muzzle flash, no casings, no gun sound
-      env.audio.click(); // placeholder swing sound
+      // Melee swing — no muzzle flash, no casings
+      env.audio.click(); // TODO: replace with proper melee swing sound
       env.shakeKick(0.06);
     }else{
       env.audio.gun(id);
@@ -2292,8 +2292,8 @@ class Game{
 
     // Load textures in parallel
     const texPromises=texKeys.map(k=>{
-      const colorSpace=k.includes("base_color")?"srgb":"linear";
-      return mgr.loadTexture(k,texUrls[k],{colorSpace:colorSpace==="srgb"?THREE.SRGBColorSpace:THREE.LinearSRGBColorSpace}).catch(e=>{
+      const cs=k.includes("base_color")?THREE.SRGBColorSpace:THREE.LinearSRGBColorSpace;
+      return mgr.loadTexture(k,texUrls[k],{colorSpace:cs}).catch(e=>{
         console.warn(`[Katana] texture load failed: ${k}`,e);
         return null;
       });
@@ -2314,10 +2314,10 @@ class Game{
       const [baseColor,normal,roughness,metallic,ao]=textures;
       const matOpts={roughness:1,metalness:1};
       if(baseColor) matOpts.map=baseColor;
-      if(normal){ normal.colorSpace=THREE.LinearSRGBColorSpace; matOpts.normalMap=normal; }
-      if(roughness){ roughness.colorSpace=THREE.LinearSRGBColorSpace; matOpts.roughnessMap=roughness; }
-      if(metallic){ metallic.colorSpace=THREE.LinearSRGBColorSpace; matOpts.metalnessMap=metallic; }
-      if(ao){ ao.colorSpace=THREE.LinearSRGBColorSpace; matOpts.aoMap=ao; }
+      if(normal) matOpts.normalMap=normal;
+      if(roughness) matOpts.roughnessMap=roughness;
+      if(metallic) matOpts.metalnessMap=metallic;
+      if(ao) matOpts.aoMap=ao;
       const katanaMat=new THREE.MeshStandardMaterial(matOpts);
 
       // Apply material to all meshes in the loaded model

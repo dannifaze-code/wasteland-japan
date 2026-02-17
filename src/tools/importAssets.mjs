@@ -269,7 +269,9 @@ function run() {
       entry.tags = [sub];
     }
     if (category === "textures") {
-      entry.colorSpace = "sRGB";
+      // Base color / diffuse maps use sRGB; all other PBR maps (normal, roughness, metallic, AO, height) use linear
+      const isLinear = /normal|roughness|metallic|ao|height|displacement/i.test(baseName);
+      entry.colorSpace = isLinear ? "linear" : "sRGB";
     }
 
     manifest[manifestCat][key] = entry;

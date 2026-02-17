@@ -103,8 +103,10 @@ export class PropFactory {
       const scaledBox = new THREE.Box3().setFromObject(clone);
       scaledBox.getCenter(center);
       clone.position.sub(center);
-      // Place bottom of model at y=0
-      clone.position.y += (def.desiredHeight * 0.5);
+      // Place bottom of model at y=0 using actual scaled box dimensions
+      const scaledSize = new THREE.Vector3();
+      scaledBox.getSize(scaledSize);
+      clone.position.y += (scaledSize.y * 0.5);
     } else if (def.scale != null) {
       // Fallback to static scale when desiredHeight is not set
       clone.scale.setScalar(def.scale);

@@ -1033,9 +1033,9 @@ class Player{
     this._prevAnimState="";    // track state to avoid redundant crossfades
     this._charModelReady=false; // true once GLB model is applied
 
-    // First-person arms from character model (populated when GLB loads)
-    this._fpArms=null;         // Group containing cloned arm meshes
-    this._fpArmsMixer=null;    // separate AnimationMixer for FP arms
+    // First-person dedicated arms — populated by Game._loadFPArms() (Player_Arms.fbx)
+    this._fpArms=null;         // THREE.Group containing the FP arms mesh (layer 1)
+    this._fpArmsModel=null;    // The loaded FBX model inside the group
 
     // First-person weapon view model (layer 1 = FP-only pass)
     this.fpWeapon=this._buildFPWeapon();
@@ -1235,8 +1235,9 @@ class Player{
     wrapper.add(tpModel);
 
     // Enable shadows on all meshes, optimize materials
-    // Clone each material so we don't mutate the shared original; set needsUpdate so
-    // Three.js re-uploads textures/uniforms after the clone (fixes all-white model).
+    // Clone each material so we don't mutate the shared original.
+    // Force full opacity (Meshy AI GLBs sometimes export alphaMode=BLEND) and
+    // set needsUpdate so Three.js re-uploads textures/uniforms after the clone.
     tpModel.traverse(child=>{
       if(child.isMesh){
         child.castShadow=true;
@@ -1247,6 +1248,11 @@ class Player{
           const cloned=srcMats.map(m=>{
             const c=m.clone();
             c.side=THREE.FrontSide;
+            // Force fully opaque — Meshy AI sometimes exports with transparent=true
+            c.transparent=false;
+            c.opacity=1.0;
+            c.alphaTest=0;
+            c.depthWrite=true;
             c.needsUpdate=true;
             return c;
           });
@@ -1356,8 +1362,8 @@ class Player{
       this._prevAnimState="idle";
     }
 
-    // --- First-person arms ---
-    this._buildFPArmsFromModel(charScene, animClips);
+    // NOTE: First-person arms are now a dedicated model (Player_Arms.fbx) loaded by
+    // Game._loadFPArms().  The character-model clone approach has been replaced.
 
     this._charModelReady=true;
     console.log("[Player] Character model applied. Scale="+charScale.toFixed(4)+", animations:", Object.keys(this._actions).join(", "));
@@ -1399,136 +1405,16 @@ class Player{
       this._prevAnimState="idle";
     }
 
-    // Also add to FP arms mixer if available
-    const fpAnimNames=["idle","walking","running","attack","skill03"];
-    if(this._fpArmsMixer && fpAnimNames.includes(name) && !this._fpArmsActions[name]){
-      const fpClip=clip.clone();
-      fpClip.name=name;
-      const fpAction=this._fpArmsMixer.clipAction(fpClip);
-      fpAction.clampWhenFinished=true;
-      if(loopMode!==undefined) fpAction.loop=loopMode;
-      this._fpArmsActions[name]=fpAction;
-
-      // If FP idle and nothing playing yet, start it
-      if(name==="idle" && !this._currentFPAction){
-        fpAction.play();
-        this._currentFPAction=fpAction;
-        this._prevFPAnimState="idle";
-      }
-    }
   }
 
   /**
-   * Build first-person arms by cloning arm-related meshes from the character model.
-   * Creates a clean FP arm view attached to the camera.
+   * @deprecated Replaced by Game._loadFPArms() which loads a dedicated Player_Arms.fbx.
+   * This stub is intentionally empty — the method is no longer called.
    */
-  _buildFPArmsFromModel(charScene, animClips){
-    // Remove old placeholder FP pipboy arm mesh (the skin-colored box)
-    // We'll rebuild it with the character model's arms
-
-    const fpArmsGroup=new THREE.Group();
-    fpArmsGroup.name="fpArms";
-
-    // Clone the full character for FP arms with independent skeleton
-    // SkeletonUtils.clone ensures SkinnedMesh bones are properly duplicated
-    const fpClone=SkeletonUtils.clone(charScene);
-
-    // Ensure world matrices are up-to-date before measuring bounding box
-    fpClone.updateMatrixWorld(true);
-
-    // Scale to fit FP view — 65 % of full height keeps the arms prominent while
-    // pushing the head above the camera's FOV and the feet below it.
-    const box=new THREE.Box3().setFromObject(fpClone);
-    const size=new THREE.Vector3();
-    box.getSize(size);
-    const armScale=(1.75/Math.max(size.y,0.01))*0.65;
-    fpClone.scale.setScalar(armScale);
-
-    // Rotate 180° so model faces away from camera (same direction player looks)
-    fpClone.rotation.y=Math.PI;
-
-    // Position: push the clone down so the arm/hand region sits at screen centre.
-    // At z = -0.3 the camera FOV (70°) sees ±0.21 m vertically, so the head at
-    // ~+0.45 m is above the frustum and the feet at ~-0.6 m are below it.
-    fpClone.position.set(0,-0.6,-0.3);
-
-    // Whitelist approach: keep spine/hip ancestors (needed so arm bones stay positioned)
-    // and arm/hand/shoulder bones.  Collapse everything else (head, neck, legs, toes).
-    // IMPORTANT: never collapse spine/hips because they are ancestors of the arm chain.
-    const keepBonePatterns=[
-      "spine","hips","hip","pelvis","chest","torso","root","mixamorigHips",
-      "arm","forearm","hand","finger","thumb","index","middle","ring","pinky",
-      "wrist","elbow","shoulder","clavicle","upperarm","lowerarm",
-    ];
-    const hideBonePatterns=[
-      "head","neck","jaw","eye","mouth",
-      "upleg","thigh","leg","knee","shin","calf","foot","toe","ankle","heel",
-    ];
-
-    fpClone.traverse(child=>{
-      if(child.isBone){
-        const n=child.name.toLowerCase();
-        // Explicit hide list first (head/legs), then keep list (arm chain)
-        const forceHide=hideBonePatterns.some(p=>n.includes(p));
-        const forceKeep=keepBonePatterns.some(p=>n.includes(p));
-        if(forceHide && !forceKeep){
-          child.scale.set(0,0,0);
-        }
-      }
-      if(child.isMesh){
-        child.castShadow=false;
-        child.receiveShadow=false;
-        child.frustumCulled=false; // FP elements should always render
-        if(child.material){
-          const srcMats=Array.isArray(child.material)?child.material:[child.material];
-          const cloned=srcMats.map(m=>{
-            const c=m.clone();
-            c.side=THREE.FrontSide;
-            c.depthWrite=true;
-            c.needsUpdate=true;
-            return c;
-          });
-          child.material=cloned.length===1?cloned[0]:cloned;
-        }
-      }
-    });
-
-    // Assign to layer 1 so the two-pass renderer can isolate FP elements
-    fpArmsGroup.traverse(child=>{ child.layers.set(1); });
-
-    fpArmsGroup.add(fpClone);
-
-    // Set up FP arms animation mixer
-    this._fpArmsMixer=new THREE.AnimationMixer(fpClone);
-    this._fpArmsActions={};
-
-    const addFPClip=(name, clips, loopMode)=>{
-      if(!clips||clips.length===0) return;
-      const clip=clips[0].clone();
-      clip.name=name;
-      const action=this._fpArmsMixer.clipAction(clip);
-      action.clampWhenFinished=true;
-      if(loopMode!==undefined) action.loop=loopMode;
-      this._fpArmsActions[name]=action;
-    };
-
-    addFPClip("idle",    animClips.idle,    THREE.LoopRepeat);
-    addFPClip("walking", animClips.walking, THREE.LoopRepeat);
-    addFPClip("running", animClips.running, THREE.LoopRepeat);
-    addFPClip("attack",  animClips.attack,  THREE.LoopOnce);
-    addFPClip("skill03", animClips.skill03, THREE.LoopOnce);
-
-    // Start FP arms with idle
-    if(this._fpArmsActions.idle){
-      this._fpArmsActions.idle.play();
-      this._currentFPAction=this._fpArmsActions.idle;
-    }
-
-    // Add to camera
-    this.camera.add(fpArmsGroup);
-    this._fpArms=fpArmsGroup;
-    this._fpCharClone=fpClone; // reference for animation updates
+  _buildFPArmsFromModel(_charScene, _animClips){
+    // No-op: dedicated FP arms model loaded by Game._loadFPArms().
   }
+
 
   /**
    * Update character animation state based on player movement/actions.
@@ -1594,34 +1480,6 @@ class Player{
     // Update animation mixer
     this._mixer.update(dt);
 
-    // Update FP arms animation to match (mirrored subset)
-    if(this._fpArmsMixer){
-      // Sync FP arms animation state
-      let fpDesired="idle";
-      if(planar>3.5) fpDesired="running";
-      else if(planar>0.5) fpDesired="walking";
-      if(this._playingAttack){
-        const atkName=this._attackAnimName||"attack";
-        if(this._fpArmsActions[atkName]) fpDesired=atkName;
-      }
-
-      if(fpDesired!==this._prevFPAnimState && this._fpArmsActions[fpDesired]){
-        const newAct=this._fpArmsActions[fpDesired];
-        const oldAct=this._currentFPAction;
-        if(oldAct && oldAct!==newAct){
-          newAct.reset();
-          newAct.play();
-          oldAct.crossFadeTo(newAct,0.2,true);
-        }else{
-          newAct.reset();
-          newAct.play();
-        }
-        this._currentFPAction=newAct;
-        this._prevFPAnimState=fpDesired;
-      }
-
-      this._fpArmsMixer.update(dt);
-    }
   }
 
   /**
@@ -1671,23 +1529,28 @@ class Player{
       c.visible=!isMelee||!this._fpKatanaModel;
     }
 
+    // Weapon positions are relative to the camera and tuned to sit in the right hand
+    // of the dedicated FP arms model (Player_Arms.fbx) centred at (0, -0.30, -0.40).
+    // x > 0  = right side (right hand grip)
+    // y ≈ -0.30 to -0.34 = matches arm height
+    // z ≈ -0.38 to -0.43 = same depth plane as the arms
     if(id==="katana"){
-      // Katana FP placeholder: thin long blade shape
       barrel.scale.set(0.15,0.15,2.8); body.scale.set(0.2,0.1,0.4);
-      this._fpBasePos={x:0.30,y:-0.30,z:-0.35};
-      this._fpAdsPos={x:0.15,y:-0.20,z:-0.30};
+      this._fpBasePos={x:0.16,y:-0.34,z:-0.38};
+      this._fpAdsPos={x:0.08,y:-0.22,z:-0.34};
     }else if(id==="pistol"){
       barrel.scale.set(1,1,0.7); body.scale.set(1,1,0.8);
-      this._fpBasePos={x:0.28,y:-0.24,z:-0.4};
-      this._fpAdsPos={x:0.0,y:-0.16,z:-0.35};
+      this._fpBasePos={x:0.16,y:-0.31,z:-0.42};
+      this._fpAdsPos={x:0.0,y:-0.17,z:-0.38};
     }else if(id==="rifle"){
       barrel.scale.set(1,1,1.4); body.scale.set(1.1,1.1,1.3);
-      this._fpBasePos={x:0.25,y:-0.22,z:-0.38};
-      this._fpAdsPos={x:0.0,y:-0.15,z:-0.32};
+      this._fpBasePos={x:0.13,y:-0.29,z:-0.40};
+      this._fpAdsPos={x:0.0,y:-0.16,z:-0.34};
     }else{
+      // shotgun / default
       barrel.scale.set(1.3,1.3,1.0); body.scale.set(1.4,1.2,1.0);
-      this._fpBasePos={x:0.26,y:-0.22,z:-0.36};
-      this._fpAdsPos={x:0.0,y:-0.15,z:-0.30};
+      this._fpBasePos={x:0.14,y:-0.30,z:-0.39};
+      this._fpAdsPos={x:0.0,y:-0.16,z:-0.32};
     }
     this.fpWeapon.position.set(this._fpBasePos.x,this._fpBasePos.y,this._fpBasePos.z);
     // Update TP weapon scale
@@ -1873,7 +1736,7 @@ class Player{
     // Update character skeletal animations (TP + FP arms)
     this._updateCharacterAnimation(dt);
 
-    // First-person arms visibility (from character model)
+    // First-person dedicated arms (Player_Arms.fbx) — hide when TP or Pip-Boy is up
     if(this._fpArms){
       this._fpArms.visible=(this.camMode==="fp")&&(this.pipboyAnim<0.3);
     }
@@ -1901,14 +1764,16 @@ class Player{
     }
 
     // First-person Pip-Boy position (lerps from stowed to raised)
+    // Stowed: rests on the left forearm of the dedicated FP arms model
+    //   (arms centred at (0,-0.30,-0.40), left side ~x=-0.15).
+    // Raised: swings up to a comfortable reading position.
     if(this.fpPipboy){
       this.fpPipboy.visible=(this.camMode==="fp");
       const t=this.pipboyAnim;
-      // Stowed: off-screen left/below; Raised: centered in front of camera, looking at screen
-      const sx=-0.35, sy=-0.55, sz=-0.35;
-      const ex=-0.18, ey=-0.28, ez=-0.38;
+      const sx=-0.28, sy=-0.38, sz=-0.42;  // stowed — left wrist area of new arms
+      const ex=-0.16, ey=-0.20, ez=-0.44;  // raised — tilted up to face player
       this.fpPipboy.position.set(lerp(sx,ex,t),lerp(sy,ey,t),lerp(sz,ez,t));
-      this.fpPipboy.rotation.set(lerp(0.2,-0.6,t),lerp(0.3,0.15,t),0);
+      this.fpPipboy.rotation.set(lerp(0.15,-0.55,t),lerp(0.25,0.10,t),0);
     }
   }
   updateCamera(dt,env){
@@ -2071,6 +1936,9 @@ class Game{
     // Eagerly start loading the Meshy AI player character model right away
     // using known URLs — don't wait for the asset registry manifest.
     this._loadPlayerCharacter();
+    // Load dedicated FP arms (Player_Arms.fbx + PlayerArms.png) immediately.
+    // Uses fallback URLs so it doesn't need to wait for the registry either.
+    this._loadFPArms();
 
     this.assetRegistry.load().then(()=>{
       if(this.assetRegistry.error) this.toast(this.assetRegistry.error);
@@ -2918,6 +2786,86 @@ class Game{
       }
     }).catch(e=>{
       console.warn("[PlayerChar] base model load failed:",e);
+    });
+  }
+
+  /**
+   * Load the dedicated first-person arms model (Player_Arms.fbx) and its texture,
+   * position them in camera space, and assign to player._fpArms for visibility control.
+   *
+   * This replaces the old "character model clone" approach entirely.  The FP arms are
+   * future-proof: weapon models parent themselves to fpWeapon (also layer 1) which is
+   * independently positioned per weapon type, so new weapons just need an _fpBasePos.
+   */
+  _loadFPArms(){
+    const reg=this.assetRegistry;
+    const mgr=this.assetManager;
+
+    const fbxUrl=(reg.getModel("player_arms")||{}).url||"assets/models/characters/player_arms.fbx";
+    const texUrl=(reg.getTexture("playerarms")||{}).url||"assets/textures/characters/playerarms.png";
+
+    const modelP=mgr.loadModel("player_arms",fbxUrl).catch(e=>{
+      console.warn("[FPArms] FBX load failed:",e); return null;
+    });
+    const texP=mgr.loadTexture("playerarms",texUrl,{colorSpace:THREE.SRGBColorSpace}).catch(e=>{
+      console.warn("[FPArms] texture load failed:",e); return null;
+    });
+
+    Promise.all([modelP,texP]).then(([model,texture])=>{
+      if(!model){ console.warn("[FPArms] arms model unavailable, FP arms skipped."); return; }
+
+      // --- Material ---
+      // Use the PNG texture if loaded; fall back to a skin-tone flat colour.
+      const armMat=new THREE.MeshStandardMaterial({
+        map: texture||null,
+        color: texture?0xffffff:0xc49a6c,
+        roughness:0.82,
+        metalness:0.04,
+        side:THREE.FrontSide,
+        transparent:false,
+        depthWrite:true,
+      });
+
+      model.traverse(child=>{
+        if(child.isMesh){
+          child.material=armMat;
+          child.castShadow=false;
+          child.receiveShadow=false;
+          child.frustumCulled=false; // always draw FP arms
+        }
+      });
+
+      // --- Scale ---
+      // Normalise so the arms span ~0.55 m vertically (hand to elbow on screen).
+      model.updateMatrixWorld(true);
+      const box=new THREE.Box3().setFromObject(model);
+      const size=new THREE.Vector3();
+      box.getSize(size);
+      const targetHeight=0.55;
+      const autoScale=targetHeight/Math.max(size.y,size.x,0.001);
+      model.scale.setScalar(autoScale);
+
+      // --- Orientation (FBX from Blender is Y-up, Three.js also Y-up) ---
+      // Rotate so the palms face the camera and the arms hang naturally.
+      // X = -90° converts Blender's Z-forward → Three.js Z-forward export quirk.
+      model.rotation.set(-Math.PI/2,0,0);
+
+      // --- Position in camera space ---
+      // Centre the arms at the lower-centre of the screen; individual weapon offsets
+      // will shift fpWeapon (right hand region) without moving the arms mesh itself.
+      model.position.set(0,-0.30,-0.40);
+
+      // --- Group & layer ---
+      const fpArmsGroup=new THREE.Group();
+      fpArmsGroup.name="fpArms";
+      fpArmsGroup.add(model);
+      fpArmsGroup.traverse(c=>c.layers.set(1)); // FP layer, rendered in second pass
+
+      this.camera.add(fpArmsGroup);
+      this.player._fpArms=fpArmsGroup;
+      this.player._fpArmsModel=model;
+
+      console.log("[FPArms] Dedicated arms loaded. autoScale="+autoScale.toFixed(4));
     });
   }
 

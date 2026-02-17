@@ -10,16 +10,9 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
 import { WorldPropDefs } from "../assets/worldProps.js";
 
-// Try to import SkeletonUtils for skinned-mesh cloning; fall back gracefully.
-let SkeletonUtils = null;
-try {
-  const mod = await import(
-    "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/utils/SkeletonUtils.js"
-  );
-  SkeletonUtils = mod.SkeletonUtils || mod;
-} catch (_) {
-  /* SkeletonUtils unavailable — will use .clone(true) */
-}
+// Lazy-loaded SkeletonUtils reference (resolved on first clone attempt).
+let _skeletonUtils = null;
+let _skeletonUtilsLoaded = false;
 
 export class PropFactory {
   /**
@@ -30,6 +23,16 @@ export class PropFactory {
     this._assets = assetManager;
     /** @type {Map<string, THREE.Object3D>} source models keyed by prop key */
     this._sources = new Map();
+
+    // Kick off SkeletonUtils import (non-blocking, best-effort).
+    if (!_skeletonUtilsLoaded) {
+      _skeletonUtilsLoaded = true;
+      import(
+        "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/utils/SkeletonUtils.js"
+      )
+        .then((mod) => { _skeletonUtils = mod.SkeletonUtils || mod; })
+        .catch(() => { /* unavailable — will use .clone(true) */ });
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -120,8 +123,8 @@ export class PropFactory {
    * @returns {THREE.Object3D}
    */
   _clone(source) {
-    if (SkeletonUtils && typeof SkeletonUtils.clone === "function") {
-      return SkeletonUtils.clone(source);
+    if (_skeletonUtils && typeof _skeletonUtils.clone === "function") {
+      return _skeletonUtils.clone(source);
     }
     return source.clone(true);
   }

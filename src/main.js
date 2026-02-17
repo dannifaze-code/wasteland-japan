@@ -794,7 +794,7 @@ class World{
     g.userData.poi=poiLabel;
     g.add(model);
     if(def&&def.yOffset) model.position.y=def.yOffset;
-    g.position.set((rng()-0.5)*18,0,(rng()-0.5)*18);
+    g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
     g.rotation.y=(def&&def.rotationY?def.rotationY:0)+rng()*Math.PI*2;
     return g;
   }
@@ -1548,7 +1548,7 @@ class Game{
     // Asset pipeline + prop factory
     this.assetManager=new AssetManager();
     this.propFactory=new PropFactory(this.assetManager);
-    this.propFactory.preload(Object.keys(WorldPropDefs)).catch(()=>{});
+    this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
 
     this.world=new World(this.scene,this.save.world.seed,this.propFactory);
 

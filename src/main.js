@@ -793,7 +793,7 @@ class World{
     const g=new THREE.Group();
     g.userData.poi=poiLabel;
     g.add(model);
-    if(def&&def.yOffset) model.position.y=def.yOffset;
+    if(def&&def.yOffset) model.position.y+=def.yOffset;
     g.position.set((rng()-0.5)*20,0,(rng()-0.5)*20);
     g.rotation.y=(def&&def.rotationY?def.rotationY:0)+rng()*Math.PI*2;
     return g;

@@ -9,7 +9,8 @@
  * Fields:
  *   url            – relative path from project root
  *   type           – "gltf" | "fbx" | "obj"
- *   scale          – uniform scale (default 1)
+ *   scale          – uniform scale (default 1); ignored when desiredHeight is set
+ *   desiredHeight  – target height in meters; auto-scales model to fit (optional)
  *   rotationY      – base Y rotation in radians (default 0)
  *   yOffset        – vertical offset after placement (default 0)
  *   materialTweaks – optional { metalness, roughness, … } applied per mesh
@@ -21,7 +22,7 @@ export const WorldPropDefs = {
   ironShack: {
     url: "./assets/models/environment/buildings/小屋トタン.fbx",
     type: "fbx",
-    scale: 0.01,
+    desiredHeight: 4,   // 4 meters tall shack
     rotationY: 0,
     yOffset: 0,
     castShadow: true,
@@ -30,7 +31,7 @@ export const WorldPropDefs = {
   roadSigns: {
     url: "./assets/models/environment/roads_signs/001.fbx",
     type: "fbx",
-    scale: 0.01,
+    desiredHeight: 3,   // 3 meters tall sign post
     rotationY: 0,
     yOffset: 0,
     castShadow: true,

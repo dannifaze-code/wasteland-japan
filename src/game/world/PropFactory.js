@@ -85,8 +85,30 @@ export class PropFactory {
     const def = WorldPropDefs[key];
     const clone = this._clone(source);
 
-    // Apply scale
-    if (def.scale != null) {
+    // Auto-scale to desired height using bounding box measurement
+    if (def.desiredHeight != null) {
+      const box = new THREE.Box3().setFromObject(clone);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+
+      const currentHeight = size.y;
+      if (currentHeight > 0) {
+        const scaleFactor = def.desiredHeight / currentHeight;
+        clone.scale.setScalar(scaleFactor);
+      }
+
+      // Re-center pivot and sit model on the ground
+      const center = new THREE.Vector3();
+      // Re-compute box after scaling
+      const scaledBox = new THREE.Box3().setFromObject(clone);
+      scaledBox.getCenter(center);
+      clone.position.sub(center);
+      // Place bottom of model at y=0 using actual scaled box dimensions
+      const scaledSize = new THREE.Vector3();
+      scaledBox.getSize(scaledSize);
+      clone.position.y += (scaledSize.y * 0.5);
+    } else if (def.scale != null) {
+      // Fallback to static scale when desiredHeight is not set
       clone.scale.setScalar(def.scale);
     }
 

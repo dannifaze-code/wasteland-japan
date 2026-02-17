@@ -286,10 +286,35 @@ export class Editor {
         <option value="scale">Scale</option>
       </select>
       <div class="sep"></div>
+      <div class="btn import-btn">📂 Import Model</div>
+      <div class="sep"></div>
       <div class="btn delete-btn">Delete (Del)</div>
       <div class="btn exit-btn">Exit (F10)</div>
     `;
     root.appendChild(bar);
+
+    // Hidden file input for Import Model button
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".glb,.gltf,.obj,.fbx";
+    fileInput.style.display = "none";
+    root.appendChild(fileInput);
+
+    bar.querySelector(".import-btn").addEventListener("click", () => {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files && fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const ext = file.name.split(".").pop().toLowerCase();
+        if (["glb", "gltf", "obj", "fbx"].includes(ext)) {
+          this._loadDroppedFileWithPersistence(file);
+        } else {
+          this._setStatus("Unsupported file type. Use .glb, .gltf, .obj, or .fbx");
+        }
+        fileInput.value = ""; // Reset so same file can be re-imported
+      }
+    });
 
     // Bind bar controls
     const speedSlider = bar.querySelector(".speed-slider");

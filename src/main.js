@@ -21,6 +21,7 @@ import { AssetManager } from "./engine/AssetManager.js";
 import { AssetRegistry } from "./engine/AssetRegistry.js";
 import { PropFactory } from "./game/world/PropFactory.js";
 import { WorldPropDefs } from "./game/assets/worldProps.js";
+import { Editor } from "./editor.js";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -266,7 +267,7 @@ class Input{
     this.just=new Set();
     this.mouse={dx:0,dy:0,locked:false,sens:0.0022};
     this.mouseButtons=new Map();
-    window.addEventListener("keydown",e=>{ if(e.code==="Tab"||e.code==="F8"||e.code==="F9") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
+    window.addEventListener("keydown",e=>{ if(e.code==="Tab"||e.code==="F8"||e.code==="F9"||e.code==="F10") e.preventDefault(); if(!this.keys.get(e.code)) this.just.add(e.code); this.keys.set(e.code,true);});
     window.addEventListener("keyup",e=>this.keys.set(e.code,false));
     document.addEventListener("mousemove",e=>{ if(!this.mouse.locked) return; this.mouse.dx+=e.movementX; this.mouse.dy+=e.movementY;});
     document.addEventListener("pointerlockchange",()=>{this.mouse.locked=document.pointerLockElement===this.dom;});
@@ -2014,6 +2015,12 @@ class Game{
     this._makeLights();
     this._makeSky();
     this._bindUI();
+
+    // Editor mode (F10 toggle)
+    this.editor=new Editor(this.scene, this.camera, this.renderer, { terrain:this.terrain, input:this.input });
+    this.editor.onExit(()=>this.exitEditor());
+    this.editor.loadSavedProps();
+
     this.showTitle();
 
     addEventListener("resize",()=>{
@@ -2407,6 +2414,33 @@ class Game{
     }
     this.audio.startAmbient(this.player.inVault?"vault":"waste");
     this.ui.showToast("Loaded.");
+  }
+
+  enterEditor(){
+    if(this.mode==="editor") return;
+    this._preEditorMode=this.mode;
+    this.mode="editor";
+    // Hide all game UI
+    this.ui.scrim.style.display="none";
+    this.ui.inv.style.display="none";
+    this.ui.hud.style.display="none";
+    // Release pointer lock
+    if(document.pointerLockElement) document.exitPointerLock();
+    this.editor.enter(this.player.pos, this.player.yaw, this.player.pitch);
+    this.ui.showToast("Editor Mode — F10 to exit");
+  }
+
+  exitEditor(){
+    if(this.mode!=="editor") return;
+    this.editor.exit();
+    this.mode="play";
+    // Restore game UI
+    this.ui.hud.style.display="";
+    // Restore player camera position from editor fly position
+    this.player.pos.copy(this.editor.flyPos);
+    this.player.yaw=this.editor.flyYaw;
+    this.player.pitch=this.editor.flyPitch;
+    this.ui.showToast("Editor Mode OFF");
   }
 
   toggleInventory(force=null){
@@ -3812,12 +3846,17 @@ class Game{
 
     // global hotkeys
     if(this.input.pressed("Escape")){
-      if(this.mode==="play") this.showPause();
+      if(this.mode==="editor") this.exitEditor();
+      else if(this.mode==="play") this.showPause();
       else if(this.mode==="dialogue") this.closeDialogue();
       else if(this.mode==="terminal") this.closeTerminalUI();
       else if(this.mode==="pipboy") this.closePipboy();
       else if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){ this.resume(); this.ui.inv.style.display="none"; this.ui.skillTree.style.display="none"; this.ui.craftPanel.style.display="none"; }
       else if(this.mode==="intro") this.endIntro();
+    }
+    if(this.input.pressed("F10")){
+      if(this.mode==="play") this.enterEditor();
+      else if(this.mode==="editor") this.exitEditor();
     }
     if(this.input.pressed("Tab")){
       if(this.mode==="play") this.openPipboy("journal");
@@ -3886,6 +3925,12 @@ class Game{
     }
 
     // mode-specific updates
+    if(this.mode==="editor"){
+      this.updateTime(dt);
+      this.editor.update(dt);
+      this.renderScene();
+      return;
+    }
     if(this.mode==="intro"){
       this.vault.setVisible(true);
       this.vault.setExteriorVisible(false);

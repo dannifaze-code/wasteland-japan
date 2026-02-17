@@ -3,6 +3,7 @@
 // Runs best from a local server (ES modules).
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.module.js";
+import * as SkeletonUtils from "https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/utils/SkeletonUtils.js";
 import { NPCManager } from "./npc.js";
 import { DialogueController } from "./dialogue.js";
 import { DIALOGUE_CSS, buildDialogueUI, renderDialogueNode } from "./dialogueUI.js";
@@ -1200,7 +1201,8 @@ class Player{
     const oldParent=oldModel.parent;
 
     // Clone the character scene so we have a clean copy for TP
-    const tpModel=charScene.clone();
+    // Use SkeletonUtils.clone to properly clone SkinnedMesh with independent skeleton
+    const tpModel=SkeletonUtils.clone(charScene);
 
     // Auto-scale: measure bounding box, target ~1.75m tall
     const box=new THREE.Box3().setFromObject(tpModel);
@@ -1236,12 +1238,33 @@ class Player{
     });
 
     // Re-create arm pivots on wrapper for TP weapon attachment
+    // Try to find actual hand bones in the skeleton for accurate placement
+    let rightHandBone=null, leftHandBone=null;
+    tpModel.traverse(child=>{
+      if(child.isBone){
+        const n=child.name.toLowerCase();
+        if(!rightHandBone && (n.includes("righthand")||n.includes("right_hand")||n.includes("r_hand")||n.includes("hand_r")||n.includes("hand.r")))
+          rightHandBone=child;
+        if(!leftHandBone && (n.includes("lefthand")||n.includes("left_hand")||n.includes("l_hand")||n.includes("hand_l")||n.includes("hand.l")))
+          leftHandBone=child;
+      }
+    });
+
     const armRPivot=new THREE.Group();
-    armRPivot.position.set(0.35,1.25,0); // approximate shoulder position
-    wrapper.add(armRPivot);
     const armLPivot=new THREE.Group();
-    armLPivot.position.set(-0.35,1.25,0);
-    wrapper.add(armLPivot);
+    if(rightHandBone){
+      rightHandBone.add(armRPivot);
+      console.log("[Player] TP weapon attached to bone:", rightHandBone.name);
+    }else{
+      armRPivot.position.set(0.35,1.25,0); // fallback approximate shoulder position
+      wrapper.add(armRPivot);
+    }
+    if(leftHandBone){
+      leftHandBone.add(armLPivot);
+    }else{
+      armLPivot.position.set(-0.35,1.25,0);
+      wrapper.add(armLPivot);
+    }
 
     // Migrate TP weapon from old pivot to new
     if(this.tpWeapon && this._armRPivot){
@@ -1260,6 +1283,16 @@ class Player{
       oldParent.remove(oldModel);
       oldParent.add(wrapper);
     }
+    // Dispose old procedural geometry/materials
+    oldModel.traverse(child=>{
+      if(child.isMesh){
+        if(child.geometry) child.geometry.dispose();
+        if(child.material){
+          if(Array.isArray(child.material)) child.material.forEach(m=>m.dispose());
+          else child.material.dispose();
+        }
+      }
+    });
     this.model=wrapper;
     this._tpCharModel=tpModel; // reference for animation
 
@@ -1323,8 +1356,9 @@ class Player{
     const fpArmsGroup=new THREE.Group();
     fpArmsGroup.name="fpArms";
 
-    // Clone the full character for FP arms with skeletal structure intact
-    const fpClone=charScene.clone();
+    // Clone the full character for FP arms with independent skeleton
+    // SkeletonUtils.clone ensures SkinnedMesh bones are properly duplicated
+    const fpClone=SkeletonUtils.clone(charScene);
 
     // Scale to fit FP view
     const box=new THREE.Box3().setFromObject(fpClone);
@@ -1333,13 +1367,24 @@ class Player{
     const armScale=1.75/Math.max(size.y,0.01);
     fpClone.scale.setScalar(armScale);
 
-    // Position: we show only the arms portion - offset character down and back
-    // so only arms are visible in the viewport
+    // Position: offset character down and back so only arms visible in viewport
     fpClone.position.set(0,-1.35,-0.15);
 
-    // Hide head and torso meshes to show only arms
-    // We'll hide everything above shoulder height and below hip
+    // Try to hide non-arm parts by bone name for a clean FP look
+    // Common bone names for head, spine, legs that should be hidden
+    const hideBoneNames=["head","neck","spine","hips","hip","pelvis",
+      "thigh","leg","knee","shin","foot","toe","calf",
+      "leftupleg","rightupleg","leftleg","rightleg","leftfoot","rightfoot",
+      "left_leg","right_leg","left_foot","right_foot"];
+
     fpClone.traverse(child=>{
+      if(child.isBone){
+        const n=child.name.toLowerCase();
+        const shouldHide=hideBoneNames.some(b=>n.includes(b));
+        if(shouldHide){
+          child.scale.set(0,0,0); // collapse bone to hide geometry influenced by it
+        }
+      }
       if(child.isMesh){
         child.castShadow=false;
         child.receiveShadow=false;

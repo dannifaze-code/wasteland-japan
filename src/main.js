@@ -491,6 +491,7 @@ class World{
     const k=this.key(tx,tz);
     const biome=this.biome(tx,tz);
     const rng=mulberry32((this.seed*73856093) ^ (tx*19349663) ^ (tz*83492791));
+    const isCenter=tx===0&&tz===0;
     const g=new THREE.Group();
     g.position.set(tx*this.tileSize,0,tz*this.tileSize);
 
@@ -571,8 +572,8 @@ class World{
       g.add(this.makeTrainTracks(rng));
     }
 
-    // POI
-    if(rng()<0.35){
+    // POI (skip center tile — vault occupies that space)
+    if(!isCenter && rng()<0.35){
       let poi;
       if(biome===1){
         const variant=rng();
@@ -617,7 +618,6 @@ class World{
 
     // enemies (not center tile)
     const enemies=[];
-    const isCenter=tx===0&&tz===0;
     if(!isCenter){
       const n=rng()<0.7?Math.floor(1+rng()*(biome===0?3:2)):0;
       for(let i=0;i<n;i++){

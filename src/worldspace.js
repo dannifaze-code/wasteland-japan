@@ -296,6 +296,8 @@ export class Worldspace {
       mat.needsUpdate = true;
     });
 
+    const DESIRED_HEIGHT = 4; // metres — matches WorldPropDefs.ironShack.desiredHeight
+
     loader.load(modelPath, (fbx) => {
       fbx.traverse((child) => {
         if (child.isMesh) {
@@ -304,7 +306,24 @@ export class Worldspace {
           child.receiveShadow = true;
         }
       });
-      fbx.position.set(x, y, z);
+
+      // Scale FBX to desired height (source models are often in cm)
+      const box = new THREE.Box3().setFromObject(fbx);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      if (size.y > 0) {
+        const scaleFactor = DESIRED_HEIGHT / size.y;
+        fbx.scale.setScalar(scaleFactor);
+      }
+
+      // Re-compute bounds after scaling and sit the model on the ground
+      const scaledBox = new THREE.Box3().setFromObject(fbx);
+      const center = new THREE.Vector3();
+      scaledBox.getCenter(center);
+      const scaledSize = new THREE.Vector3();
+      scaledBox.getSize(scaledSize);
+      fbx.position.set(x - center.x, y - center.y + scaledSize.y * 0.5, z - center.z);
+
       fbx.userData.poi = poi.name;
       poiGroup.add(fbx);
     }, undefined, (err) => {

@@ -1896,24 +1896,26 @@ class Game{
   }
 
   applyQuality(q){
+    this._qualityLevel=q;
+    const rs=this.resolutionScale;
     if(q===0){
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio*this.resolutionScale,1.25));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.25)*rs);
       this.renderer.shadowMap.enabled=false;
       this.scene.fog.near=16; this.scene.fog.far=190;
     }else if(q===1){
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio*this.resolutionScale,1.6));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6)*rs);
       this.renderer.shadowMap.enabled=true;
       this.scene.fog.near=18; this.scene.fog.far=240;
     }else{
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio*this.resolutionScale,2));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,2)*rs);
       this.renderer.shadowMap.enabled=true;
       this.scene.fog.near=18; this.scene.fog.far=300;
     }
+    this.renderer.setSize(innerWidth,innerHeight);
   }
 
   applyResolutionScale(){
-    this.renderer.setPixelRatio(devicePixelRatio*this.resolutionScale);
-    this.renderer.setSize(innerWidth,innerHeight);
+    this.applyQuality(this._qualityLevel!=null?this._qualityLevel:1);
   }
 
   async startNewGame(){

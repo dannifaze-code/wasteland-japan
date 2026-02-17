@@ -388,7 +388,7 @@ function _renderSettings(c, game, deps) {
   let html = `<div class="section-title">Settings</div>`;
   html += `<div class="settings-row"><label>Mouse Sensitivity</label><input type="range" id="pb-sens" min="0.001" max="0.006" step="0.0001"></div>`;
   html += `<div class="settings-row"><label>Graphics Quality</label><input type="range" id="pb-quality" min="0" max="2" step="1"></div>`;
-  html += `<div class="settings-row"><label>Resolution Scale: <span id="pb-res-val">${Math.round((game.resolutionScale||1)*100)}%</span></label><input type="range" id="pb-resolution" min="0.25" max="2.0" step="0.05"></div>`;
+  html += `<div class="settings-row"><label>Resolution Scale: <span id="pb-res-val">${Math.round(game.resolutionScale*100)}%</span></label><input type="range" id="pb-resolution" min="0.25" max="2.0" step="0.05"></div>`;
   html += `<div class="settings-row"><label>Master Volume</label><input type="range" id="pb-volume" min="0" max="1" step="0.01"></div>`;
   c.innerHTML = html;
 
@@ -402,7 +402,7 @@ function _renderSettings(c, game, deps) {
   quality.addEventListener("input", () => { if (game.applyQuality) game.applyQuality(parseInt(quality.value, 10)); });
 
   const resolution = c.querySelector("#pb-resolution");
-  resolution.value = String(game.resolutionScale||1);
+  resolution.value = String(game.resolutionScale);
   resolution.addEventListener("input", () => {
     game.resolutionScale = parseFloat(resolution.value);
     const label = c.querySelector("#pb-res-val");

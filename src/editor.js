@@ -13,7 +13,7 @@
  * Keyboard:
  *   F10       — toggle editor mode
  *   WASD      — fly movement
- *   QE        — fly up / down
+ *   QE / Space / Ctrl  — fly up / down
  *   Shift     — boost speed
  *   G         — toggle gizmo mode (translate / rotate / scale)
  *   Delete    — remove selected prop
@@ -136,7 +136,7 @@ export class Editor {
     // Model being held for placement (not yet dropped)
     this._held = null;       // THREE.Object3D (preview)
     this._heldFileName = "";
-    this._heldUrl = "";      // object URL
+    this._heldUrl = "";      // file name for persistence lookup
 
     // Gizmo mode: "translate" | "rotate" | "scale"
     this.gizmoMode = "translate";

@@ -2433,7 +2433,7 @@ class Game{
   exitEditor(){
     if(this.mode!=="editor") return;
     this.editor.exit();
-    this.mode="play";
+    this.mode=this._preEditorMode||"play";
     // Restore game UI
     this.ui.hud.style.display="";
     // Restore player camera position from editor fly position

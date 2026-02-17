@@ -1037,13 +1037,15 @@ class Player{
     this._fpArms=null;         // Group containing cloned arm meshes
     this._fpArmsMixer=null;    // separate AnimationMixer for FP arms
 
-    // First-person weapon view model
+    // First-person weapon view model (layer 1 = FP-only pass)
     this.fpWeapon=this._buildFPWeapon();
+    this.fpWeapon.traverse(c=>c.layers.set(1));
     this.camera.add(this.fpWeapon);
     this._updateFPWeapon();
 
     // Muzzle flash
     this.muzzleFlash=this._buildMuzzleFlash();
+    this.muzzleFlash.traverse(c=>c.layers.set(1));
     this.fpWeapon.add(this.muzzleFlash);
     this.muzzleFlashTimer=0;
 
@@ -1052,8 +1054,9 @@ class Player{
     this.weaponKick=0;
     this.weaponKickReturn=0;
 
-    // Pip-Boy (first-person arm + device attached to camera)
+    // Pip-Boy (first-person arm + device attached to camera, layer 1 = FP-only pass)
     this.fpPipboy=this._buildFPPipboy();
+    this.fpPipboy.traverse(c=>c.layers.set(1));
     this.camera.add(this.fpPipboy);
     this.pipboyAnim=0; // 0 = stowed, 1 = fully raised
     this.pipboyActive=false;
@@ -1232,13 +1235,22 @@ class Player{
     wrapper.add(tpModel);
 
     // Enable shadows on all meshes, optimize materials
+    // Clone each material so we don't mutate the shared original; set needsUpdate so
+    // Three.js re-uploads textures/uniforms after the clone (fixes all-white model).
     tpModel.traverse(child=>{
       if(child.isMesh){
         child.castShadow=true;
         child.receiveShadow=false;
         child.frustumCulled=true;
         if(child.material){
-          child.material.side=THREE.FrontSide;
+          const srcMats=Array.isArray(child.material)?child.material:[child.material];
+          const cloned=srcMats.map(m=>{
+            const c=m.clone();
+            c.side=THREE.FrontSide;
+            c.needsUpdate=true;
+            return c;
+          });
+          child.material=cloned.length===1?cloned[0]:cloned;
         }
       }
     });
@@ -1424,32 +1436,43 @@ class Player{
     // Ensure world matrices are up-to-date before measuring bounding box
     fpClone.updateMatrixWorld(true);
 
-    // Scale to fit FP view — use a fraction of full character height for arms-only viewport
+    // Scale to fit FP view — 65 % of full height keeps the arms prominent while
+    // pushing the head above the camera's FOV and the feet below it.
     const box=new THREE.Box3().setFromObject(fpClone);
     const size=new THREE.Vector3();
     box.getSize(size);
-    const armScale=(1.75/Math.max(size.y,0.01))*0.5;
+    const armScale=(1.75/Math.max(size.y,0.01))*0.65;
     fpClone.scale.setScalar(armScale);
 
     // Rotate 180° so model faces away from camera (same direction player looks)
     fpClone.rotation.y=Math.PI;
 
-    // Position: offset character down and forward so only arms visible in viewport
-    fpClone.position.set(0,-0.5,-0.3);
+    // Position: push the clone down so the arm/hand region sits at screen centre.
+    // At z = -0.3 the camera FOV (70°) sees ±0.21 m vertically, so the head at
+    // ~+0.45 m is above the frustum and the feet at ~-0.6 m are below it.
+    fpClone.position.set(0,-0.6,-0.3);
 
-    // Try to hide non-arm parts by bone name for a clean FP look
-    // Common bone names for head, spine, legs that should be hidden
-    const hideBoneNames=["head","neck","spine","hips","hip","pelvis",
-      "thigh","leg","knee","shin","foot","toe","calf",
-      "leftupleg","rightupleg","leftleg","rightleg","leftfoot","rightfoot",
-      "left_leg","right_leg","left_foot","right_foot"];
+    // Whitelist approach: keep spine/hip ancestors (needed so arm bones stay positioned)
+    // and arm/hand/shoulder bones.  Collapse everything else (head, neck, legs, toes).
+    // IMPORTANT: never collapse spine/hips because they are ancestors of the arm chain.
+    const keepBonePatterns=[
+      "spine","hips","hip","pelvis","chest","torso","root","mixamorigHips",
+      "arm","forearm","hand","finger","thumb","index","middle","ring","pinky",
+      "wrist","elbow","shoulder","clavicle","upperarm","lowerarm",
+    ];
+    const hideBonePatterns=[
+      "head","neck","jaw","eye","mouth",
+      "upleg","thigh","leg","knee","shin","calf","foot","toe","ankle","heel",
+    ];
 
     fpClone.traverse(child=>{
       if(child.isBone){
         const n=child.name.toLowerCase();
-        const shouldHide=hideBoneNames.some(b=>n.includes(b));
-        if(shouldHide){
-          child.scale.set(0,0,0); // collapse bone to hide geometry influenced by it
+        // Explicit hide list first (head/legs), then keep list (arm chain)
+        const forceHide=hideBonePatterns.some(p=>n.includes(p));
+        const forceKeep=keepBonePatterns.some(p=>n.includes(p));
+        if(forceHide && !forceKeep){
+          child.scale.set(0,0,0);
         }
       }
       if(child.isMesh){
@@ -1457,12 +1480,21 @@ class Player{
         child.receiveShadow=false;
         child.frustumCulled=false; // FP elements should always render
         if(child.material){
-          child.material=child.material.clone();
-          child.material.side=THREE.FrontSide;
-          child.material.depthWrite=true;
+          const srcMats=Array.isArray(child.material)?child.material:[child.material];
+          const cloned=srcMats.map(m=>{
+            const c=m.clone();
+            c.side=THREE.FrontSide;
+            c.depthWrite=true;
+            c.needsUpdate=true;
+            return c;
+          });
+          child.material=cloned.length===1?cloned[0]:cloned;
         }
       }
     });
+
+    // Assign to layer 1 so the two-pass renderer can isolate FP elements
+    fpArmsGroup.traverse(child=>{ child.layers.set(1); });
 
     fpArmsGroup.add(fpClone);
 
@@ -2007,6 +2039,8 @@ class Game{
     this.renderer.setSize(innerWidth,innerHeight);
     this.renderer.shadowMap.enabled=true;
     this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    this.renderer.outputColorSpace=THREE.SRGBColorSpace;
+    this.renderer.autoClear=false; // manual clear for two-pass FP rendering
     document.body.appendChild(this.renderer.domElement);
 
     this.scene=new THREE.Scene();
@@ -2815,6 +2849,8 @@ class Game{
 
       // Only visible when katana is equipped
       model.visible=this.player.weapon.id==="katana";
+      // Place katana on FP layer so it renders in the second pass
+      model.traverse(c=>c.layers.set(1));
       this.player.fpWeapon.add(model);
       this.player._fpKatanaModel=model;
 
@@ -3708,6 +3744,30 @@ class Game{
   }
 
   // HUD
+  /**
+   * Two-pass render:
+   *  Pass 1 – world (all layers except 1).  Full clear.
+   *  Pass 2 – FP elements on layer 1 only.  Depth-clear only so they
+   *            always appear in front of the world without Z-fighting.
+   */
+  renderScene(){
+    // Pass 1: world geometry (layer 0 and everything except layer 1)
+    this.camera.layers.enableAll();
+    this.camera.layers.disable(1);
+    this.renderer.clear();
+    this.renderer.render(this.scene,this.camera);
+
+    // Pass 2: first-person overlay (layer 1) – only when in FP mode
+    if(this.player && this.player.camMode==="fp"){
+      this.camera.layers.set(1);
+      this.renderer.clearDepth();
+      this.renderer.render(this.scene,this.camera);
+    }
+
+    // Restore camera to see all layers for next frame's raycasts / UI etc.
+    this.camera.layers.enableAll();
+  }
+
   renderHUD(){
     const p=this.player;
     const effMax=p.effectiveMaxHP();
@@ -3886,7 +3946,7 @@ class Game{
       this.updateTime(dt);
       this.updateCutscene(dt);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
     if(this.mode==="title"){
@@ -3894,13 +3954,13 @@ class Game{
       this.camera.position.set(0,3.4,10);
       this.camera.lookAt(0,3.2,0);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
     if(this.mode==="pause"||this.mode==="inventory"||this.mode==="skills"||this.mode==="crafting"){
       this.updateTime(dt);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
     if(this.mode==="pipboy"){
@@ -3909,7 +3969,7 @@ class Game{
       this.player.updateModels(dt);
       this.player.updateCamera(dt,this);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
     if(this.mode==="dialogue"){
@@ -3917,13 +3977,13 @@ class Game{
       this.npcMgr.update(dt, this.player.pos, this.dialogueCtrl.currentNpcId);
       if(!this.player.inVault) this.npcMgr.updateOutside(dt, this.player.pos);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
     if(this.mode==="terminal"){
       this.updateTime(dt);
       this.renderHUD();
-      this.renderer.render(this.scene,this.camera);
+      this.renderScene();
       return;
     }
 
@@ -4214,7 +4274,7 @@ class Game{
     }
 
     this.renderHUD();
-    this.renderer.render(this.scene,this.camera);
+    this.renderScene();
   }
 
   updateCutscene(dt){

@@ -1121,17 +1121,13 @@ class Player{
     // grip
     const grip=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.12,0.06),gripMat);
     grip.position.set(0,-0.09,-0.04); grip.rotation.x=0.25; grip.castShadow=true;
-    // hand
-    const handMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
-    const hand=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.06,0.1),handMat);
-    hand.position.set(0,-0.06,0.02);
     // iron sight post (small nub on top of barrel end)
     const sightMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.5,metalness:0.5});
     const frontSight=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.02,0.008),sightMat);
     frontSight.position.set(0,0.035,0.44);
     const rearSight=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.015,0.008),sightMat);
     rearSight.position.set(0,0.035,0.05);
-    g.add(barrel,body,grip,hand,frontSight,rearSight);
+    g.add(barrel,body,grip,frontSight,rearSight);
     g.position.set(0.28,-0.24,-0.4);
     g.rotation.y=0;
     return g;
@@ -1167,10 +1163,6 @@ class Player{
   }
   _buildFPPipboy(){
     const g=new THREE.Group();
-    const skinMat=new THREE.MeshStandardMaterial({color:0xc49a6c,roughness:0.9});
-    // Left forearm
-    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.22,0.11),skinMat);
-    arm.position.set(0,0,0);
     // Pip-Boy device body
     const pbMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:0.4,metalness:0.65});
     const pbBody=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.10,0.17),pbMat);
@@ -1183,7 +1175,7 @@ class Player{
     // Subtle green glow
     const pbGlow=new THREE.PointLight(0x33ff66,0.25,1.2,2);
     pbGlow.position.set(0,0.13,0);
-    g.add(arm,pbBody,pbScreen,pbGlow);
+    g.add(pbBody,pbScreen,pbGlow);
     // Stowed position (below and off-screen to the left)
     g.position.set(-0.35,-0.55,-0.35);
     g.rotation.set(0.2,0.3,0);
@@ -2035,20 +2027,26 @@ class Game{
   }
 
   _makeLights(){
-    this.scene.add(new THREE.AmbientLight(0xffffff,0.55));
+    const ambient=new THREE.AmbientLight(0xffffff,0.55);
+    ambient.layers.enable(1); // also illuminate FP layer
+    this.scene.add(ambient);
+
     this.sun=new THREE.DirectionalLight(0xfff4e0,1.6);
     this.sun.position.set(50,70,20);
     this.sun.castShadow=true;
     this.sun.shadow.mapSize.set(1024,1024);
     Object.assign(this.sun.shadow.camera,{near:1,far:150,left:-60,right:60,top:60,bottom:-60});
+    this.sun.layers.enable(1); // also illuminate FP layer
     this.scene.add(this.sun);
 
     // Hemisphere light for better ambient variation
     this.hemiLight=new THREE.HemisphereLight(0x8899bb,0x223311,0.35);
+    this.hemiLight.layers.enable(1); // also illuminate FP layer
     this.scene.add(this.hemiLight);
 
     this.vaultLight=new THREE.PointLight(0x9bd3ff,2.2,60,1.9);
     this.vaultLight.position.set(0,6.5,0);
+    this.vaultLight.layers.enable(1); // also illuminate FP layer
     this.scene.add(this.vaultLight);
   }
 
@@ -2836,19 +2834,19 @@ class Game{
       });
 
       // --- Scale ---
-      // Normalise so the arms span ~0.55 m vertically (hand to elbow on screen).
+      // Normalise so the arms span ~0.55 m across their largest dimension.
       model.updateMatrixWorld(true);
       const box=new THREE.Box3().setFromObject(model);
       const size=new THREE.Vector3();
       box.getSize(size);
       const targetHeight=0.55;
-      const autoScale=targetHeight/Math.max(size.y,size.x,0.001);
+      const autoScale=targetHeight/Math.max(size.x,size.y,size.z,0.001);
       model.scale.setScalar(autoScale);
 
-      // --- Orientation (FBX from Blender is Y-up, Three.js also Y-up) ---
-      // Rotate so the palms face the camera and the arms hang naturally.
-      // X = -90° converts Blender's Z-forward → Three.js Z-forward export quirk.
-      model.rotation.set(-Math.PI/2,0,0);
+      // --- Orientation ---
+      // FBXLoader already converts Blender Z-up → Three.js Y-up (applies -90° X internally).
+      // No additional rotation needed.
+      model.rotation.set(0,0,0);
 
       // --- Position in camera space ---
       // Centre the arms at the lower-centre of the screen; individual weapon offsets
@@ -2859,7 +2857,7 @@ class Game{
       const fpArmsGroup=new THREE.Group();
       fpArmsGroup.name="fpArms";
       fpArmsGroup.add(model);
-      fpArmsGroup.traverse(c=>c.layers.set(1)); // FP layer, rendered in second pass
+      fpArmsGroup.traverse(c=>c.layers.set(1)); // FP layer — traverse sets ALL descendants
 
       this.camera.add(fpArmsGroup);
       this.player._fpArms=fpArmsGroup;

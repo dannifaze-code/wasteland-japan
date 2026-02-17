@@ -36,8 +36,9 @@ const EXT_DATA = new Set(["json"]);
 
 // Keyword → sub-folder mapping
 const KEYWORD_RULES = [
-  // Models & textures sub-folders
-  { keywords: ["weapon", "gun", "rifle", "pistol", "katana", "sword", "melee", "firearm"], sub: "weapons" },
+  // Models & textures sub-folders — melee before firearms so specific matches win
+  { keywords: ["katana", "sword", "melee", "dagger", "axe", "spear"], sub: "weapons/melee" },
+  { keywords: ["weapon", "gun", "rifle", "pistol", "firearm", "shotgun"], sub: "weapons/firearms" },
   { keywords: ["character", "npc", "companion", "player"], sub: "characters" },
   { keywords: ["ui", "hud", "icon"], sub: "ui" },
   // Audio sub-folders
@@ -268,7 +269,9 @@ function run() {
       entry.tags = [sub];
     }
     if (category === "textures") {
-      entry.colorSpace = "sRGB";
+      // Base color / diffuse maps use sRGB; all other PBR maps (normal, roughness, metallic, AO, height) use linear
+      const isLinear = /normal|roughness|metallic|ao|height|displacement/i.test(baseName);
+      entry.colorSpace = isLinear ? "linear" : "sRGB";
     }
 
     manifest[manifestCat][key] = entry;

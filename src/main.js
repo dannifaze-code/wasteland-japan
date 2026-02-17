@@ -292,7 +292,7 @@ function defaultSave(){
       equipped:0,
       ammo:{pistol:48,rifle:120,shotgun:24},
       mags:{pistol:12,rifle:30,shotgun:6},
-      inv:[{id:"stim",qty:1},{id:"ration",qty:1},{id:"scrap",qty:2},{id:"pistol",qty:1},{id:"rifle",qty:1},{id:"shotgun",qty:1}],
+      inv:[{id:"stim",qty:1},{id:"ration",qty:1},{id:"scrap",qty:2},{id:"pistol",qty:1},{id:"rifle",qty:1},{id:"shotgun",qty:1},{id:"katana",qty:1}],
       maxWeight:55,
       radiation:0,armor:0,xp:0,level:1,skillPoints:0,
       skills:{toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0}
@@ -322,6 +322,7 @@ const ItemDB={
   pistol:{id:"pistol",name:"Type-11 Pistol",type:"weapon",weight:2.4,desc:"Reliable. Loud."},
   rifle:{id:"rifle",name:"Kurokawa Rifle",type:"weapon",weight:4.9,desc:"Automatic. Hungry."},
   shotgun:{id:"shotgun",name:"Shrine-Breaker",type:"weapon",weight:5.6,desc:"Close-range sermon."},
+  katana:{id:"katana",name:"Ronin's Katana",type:"weapon",weight:3.2,desc:"A pre-war blade, still sharp."},
   vest:{id:"vest",name:"Makeshift Vest",type:"armor",weight:3.5,desc:"+10 Armor."},
   plating:{id:"plating",name:"Scrap Plating",type:"armor",weight:5.0,desc:"+20 Armor."},
   scope:{id:"scope",name:"Improvised Scope",type:"mod",weight:0.4,desc:"Reduces spread."},
@@ -336,6 +337,7 @@ const WeaponDefs=[
   {id:"pistol",name:"Type-11 Pistol",fireMode:"semi",rpm:380,magSize:12,spread:0.003,damage:22,range:110,recoil:{kick:0.03,ret:9.0}},
   {id:"rifle",name:"Kurokawa Rifle",fireMode:"auto",rpm:720,magSize:30,spread:0.0045,damage:14,range:140,recoil:{kick:0.02,ret:11.5}},
   {id:"shotgun",name:"Shrine-Breaker",fireMode:"semi",rpm:120,magSize:6,pellets:8,spread:0.018,damage:10,range:55,recoil:{kick:0.06,ret:7.0}},
+  {id:"katana",name:"Ronin's Katana",fireMode:"melee",rpm:90,magSize:Infinity,spread:0,damage:38,range:3.5,recoil:{kick:0.04,ret:12.0}},
 ];
 
 // Crafting recipes
@@ -1006,7 +1008,7 @@ class Player{
     this.fireCd=0;
     this.recoilKick=0;
     this.camYaw=this.yaw; this.camPitch=this.pitch;
-    this.inv=[{id:"stim",qty:1},{id:"ration",qty:1},{id:"scrap",qty:2},{id:"pistol",qty:1},{id:"rifle",qty:1},{id:"shotgun",qty:1}];
+    this.inv=[{id:"stim",qty:1},{id:"ration",qty:1},{id:"scrap",qty:2},{id:"pistol",qty:1},{id:"rifle",qty:1},{id:"shotgun",qty:1},{id:"katana",qty:1}];
     this.maxWeight=55;
     this.inVault=true;
     this.stepT=0;
@@ -1193,9 +1195,28 @@ class Player{
   _updateFPWeapon(){
     if(!this.fpWeapon) return;
     const id=this.weapon.id;
+    const isMelee=this.weapon.fireMode==="melee";
     const barrel=this.fpWeapon.children[0];
     const body=this.fpWeapon.children[1];
-    if(id==="pistol"){
+
+    // Toggle muzzle-flash child visibility (index 6 = muzzle flash group)
+    if(this.muzzleFlash) this.muzzleFlash.visible=false;
+
+    // Show/hide FBX katana model when loaded
+    if(this._fpKatanaModel) this._fpKatanaModel.visible=isMelee;
+    // Show/hide placeholder geometry (barrel, body, grip, hand, sights)
+    for(let i=0;i<this.fpWeapon.children.length;i++){
+      const c=this.fpWeapon.children[i];
+      if(c===this._fpKatanaModel||c===this.muzzleFlash) continue;
+      c.visible=!isMelee||!this._fpKatanaModel;
+    }
+
+    if(id==="katana"){
+      // Katana FP placeholder: thin long blade shape
+      barrel.scale.set(0.15,0.15,2.8); body.scale.set(0.2,0.1,0.4);
+      this._fpBasePos={x:0.30,y:-0.30,z:-0.35};
+      this._fpAdsPos={x:0.15,y:-0.20,z:-0.30};
+    }else if(id==="pistol"){
       barrel.scale.set(1,1,0.7); body.scale.set(1,1,0.8);
       this._fpBasePos={x:0.28,y:-0.24,z:-0.4};
       this._fpAdsPos={x:0.0,y:-0.16,z:-0.35};
@@ -1213,7 +1234,9 @@ class Player{
     if(this.tpWeapon){
       const tpBarrel=this.tpWeapon.children[0];
       const tpBody=this.tpWeapon.children[1];
-      if(id==="pistol"){
+      if(id==="katana"){
+        tpBarrel.scale.set(0.15,0.15,2.4); tpBody.scale.set(0.2,0.1,0.4);
+      }else if(id==="pistol"){
         tpBarrel.scale.set(1,1,0.7); tpBody.scale.set(1,1,0.8);
       }else if(id==="rifle"){
         tpBarrel.scale.set(1,1,1.4); tpBody.scale.set(1.1,1.1,1.3);
@@ -1311,9 +1334,11 @@ class Player{
       this.reloading-=dt;
       if(this.reloading<=0){
         const id=this.weapon.id;
-        const need=this.getModdedMagSize()-this.mag[id];
-        const take=Math.min(need,this.reserve[id]);
-        this.mag[id]+=take; this.reserve[id]-=take;
+        if(this.weapon.fireMode!=="melee"){
+          const need=this.getModdedMagSize()-this.mag[id];
+          const take=Math.min(need,this.reserve[id]);
+          this.mag[id]+=take; this.reserve[id]-=take;
+        }
       }
     }
 
@@ -1463,6 +1488,7 @@ class Player{
     return Math.floor(this.weapon.magSize*(mods?.magMul||1));
   }
   requestReload(env){
+    if(this.weapon.fireMode==="melee") return; // melee weapons don't reload
     if(this.reloading>0) return;
     const id=this.weapon.id;
     if(this.mag[id]>=this.getModdedMagSize()) return;
@@ -1474,31 +1500,45 @@ class Player{
   tryFire(env){
     if(this.reloading>0||this.fireCd>0) return false;
     const id=this.weapon.id;
-    if(this.mag[id]<=0){ env.audio.click(); this.fireCd=0.18; return false; }
-    this.mag[id]-=1;
+    const isMelee=this.weapon.fireMode==="melee";
+
+    // Melee weapons: no ammo check
+    if(!isMelee){
+      if(this.mag[id]<=0){ env.audio.click(); this.fireCd=0.18; return false; }
+      this.mag[id]-=1;
+    }
+
     this.fireCd=60/this.weapon.rpm;
     this.recoilKick+=this.weapon.recoil.kick;
-    this.weaponKick=id==="shotgun"?0.8:id==="rifle"?0.3:0.45;
-    env.audio.gun(id);
-    env.shakeKick(id==="shotgun"?0.18:0.09);
+    this.weaponKick=isMelee?0.6:id==="shotgun"?0.8:id==="rifle"?0.3:0.45;
 
-    // Muzzle flash
-    this.muzzleFlash.visible=true;
-    this.muzzleFlashTimer=0.05;
-    this.muzzleFlash.rotation.z=Math.random()*Math.PI*2;
-    const flashScale=id==="shotgun"?2.0:id==="rifle"?1.2:1.0;
-    this.muzzleFlash.scale.setScalar(flashScale);
+    if(isMelee){
+      // Melee swing — no muzzle flash, no casings
+      env.audio.click(); // TODO: replace with proper melee swing sound
+      env.shakeKick(0.06);
+    }else{
+      env.audio.gun(id);
+      env.shakeKick(id==="shotgun"?0.18:0.09);
+
+      // Muzzle flash
+      this.muzzleFlash.visible=true;
+      this.muzzleFlashTimer=0.05;
+      this.muzzleFlash.rotation.z=Math.random()*Math.PI*2;
+      const flashScale=id==="shotgun"?2.0:id==="rifle"?1.2:1.0;
+      this.muzzleFlash.scale.setScalar(flashScale);
+
+      const dir=env.getForward();
+      const muzzle=this.pos.clone().addScaledVector(dir,0.7);
+      env.particles.spawn(muzzle,dir.clone().multiplyScalar(8),0.08,0.06);
+
+      // Shell casing ejection
+      const right=v3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
+      const casingPos=this.pos.clone().addScaledVector(right,0.3).add(v3(0,-0.1,0));
+      const casingVel=right.clone().multiplyScalar(3+Math.random()*2).add(v3(0,2+Math.random(),0));
+      env.particles.spawnCasing(casingPos,casingVel);
+    }
 
     const dir=env.getForward();
-    const muzzle=this.pos.clone().addScaledVector(dir,0.7);
-    env.particles.spawn(muzzle,dir.clone().multiplyScalar(8),0.08,0.06);
-
-    // Shell casing ejection
-    const right=v3(Math.cos(this.yaw),0,-Math.sin(this.yaw));
-    const casingPos=this.pos.clone().addScaledVector(right,0.3).add(v3(0,-0.1,0));
-    const casingVel=right.clone().multiplyScalar(3+Math.random()*2).add(v3(0,2+Math.random(),0));
-    env.particles.spawnCasing(casingPos,casingVel);
-
     const pellets=this.weapon.pellets||1;
     const mods=this._weaponMods?.[id];
     for(let i=0;i<pellets;i++){
@@ -1552,6 +1592,8 @@ class Game{
     this.assetRegistry.load().then(()=>{
       if(this.assetRegistry.error) this.toast(this.assetRegistry.error);
       this.assetRegistry.printSummary();
+      // Load katana model and PBR textures from registry
+      this._loadKatanaAssets();
     }).catch(e=>console.warn("[AssetRegistry]",e));
     this.propFactory=new PropFactory(this.assetManager);
     this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
@@ -2219,6 +2261,89 @@ class Game{
     m.castShadow=true;
     this.scene.add(m);
     this._loots.push(m);
+  }
+
+  /**
+   * Load the katana FBX model and PBR textures via AssetManager/AssetRegistry,
+   * then attach the loaded model to the player's first-person weapon group.
+   */
+  _loadKatanaAssets(){
+    const reg=this.assetRegistry;
+    const mgr=this.assetManager;
+
+    // Model — use the unsheathed variant (katana_no_case)
+    const modelEntry=reg.getModel("katana_no_case")||reg.getModel("katana");
+    const modelUrl=modelEntry?modelEntry.url:"assets/models/weapons/melee/katana_no_case.fbx";
+
+    // PBR texture keys from the manifest
+    const texKeys=[
+      "katana_material_base_color",
+      "katana_material_normal_directx",
+      "katana_material_roughness",
+      "katana_material_metallic",
+      "katana_material_mixed_ao",
+      "katana_material_height",
+    ];
+    const texUrls={};
+    for(const k of texKeys){
+      const entry=reg.getTexture(k);
+      texUrls[k]=entry?entry.url:`assets/textures/weapons/melee/${k}.png`;
+    }
+
+    // Load textures in parallel
+    const texPromises=texKeys.map(k=>{
+      const cs=k.includes("base_color")?THREE.SRGBColorSpace:THREE.LinearSRGBColorSpace;
+      return mgr.loadTexture(k,texUrls[k],{colorSpace:cs}).catch(e=>{
+        console.warn(`[Katana] texture load failed: ${k}`,e);
+        return null;
+      });
+    });
+
+    // Load model
+    const modelPromise=mgr.loadModel("katana_no_case",modelUrl).catch(e=>{
+      console.warn("[Katana] model load failed:",e);
+      return null;
+    });
+
+    Promise.all([modelPromise,...texPromises]).then(([model,...textures])=>{
+      if(!model){
+        console.warn("[Katana] model not available — using placeholder geometry.");
+        return;
+      }
+      // Build PBR material from loaded textures
+      const [baseColor,normal,roughness,metallic,ao]=textures;
+      const matOpts={roughness:1,metalness:1};
+      if(baseColor) matOpts.map=baseColor;
+      if(normal) matOpts.normalMap=normal;
+      if(roughness) matOpts.roughnessMap=roughness;
+      if(metallic) matOpts.metalnessMap=metallic;
+      if(ao) matOpts.aoMap=ao;
+      const katanaMat=new THREE.MeshStandardMaterial(matOpts);
+
+      // Apply material to all meshes in the loaded model
+      model.traverse(child=>{
+        if(child.isMesh){
+          child.material=katanaMat;
+          child.castShadow=true;
+          child.receiveShadow=false;
+        }
+      });
+
+      // Scale and orient the katana model for first-person view
+      model.scale.setScalar(0.006);
+      model.rotation.set(0,0,Math.PI/2);
+      model.position.set(0,0,0.15);
+
+      // Only visible when katana is equipped
+      model.visible=this.player.weapon.id==="katana";
+      this.player.fpWeapon.add(model);
+      this.player._fpKatanaModel=model;
+
+      // If katana is currently equipped, refresh visuals
+      if(this.player.weapon.id==="katana") this.player._updateFPWeapon();
+
+      console.log("[Katana] model + textures loaded successfully.");
+    });
   }
 
   getForward(){
@@ -3056,7 +3181,11 @@ class Game{
 
     const w=p.weapon, id=w.id;
     this.ui.ammo.querySelector(".small").textContent=w.name;
-    this.ui.ammo.querySelector(".big").textContent=`${p.mag[id]} / ${p.reserve[id]}`;
+    if(w.fireMode==="melee"){
+      this.ui.ammo.querySelector(".big").textContent="MELEE";
+    }else{
+      this.ui.ammo.querySelector(".big").textContent=`${p.mag[id]} / ${p.reserve[id]}`;
+    }
 
     const yaw=((p.yaw%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
     const deg=Math.round(yaw*180/Math.PI);
@@ -3081,7 +3210,7 @@ class Game{
       if(e.button!==0) return;
       if(this.mode!=="play") return;
       if(!this.input.mouse.locked) return;
-      if(this.player.weapon.fireMode==="semi") this.player.tryFire(this);
+      if(this.player.weapon.fireMode==="semi"||this.player.weapon.fireMode==="melee") this.player.tryFire(this);
       else this.autoFire=true;
     });
     window.addEventListener("mouseup",e=>{
@@ -3163,6 +3292,7 @@ class Game{
       if(this.input.pressed("Digit1")) this.player.setWeapon(0);
       if(this.input.pressed("Digit2")) this.player.setWeapon(1);
       if(this.input.pressed("Digit3")) this.player.setWeapon(2);
+      if(this.input.pressed("Digit4")) this.player.setWeapon(3);
       if(this.input.pressed("KeyR")) this.player.requestReload(this);
       if(this.input.pressed("KeyI")) this.openPipboy("inv");
       if(this.input.pressed("KeyE")) this.doInteract();

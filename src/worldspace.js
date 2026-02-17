@@ -54,6 +54,7 @@ export class Worldspace {
     this.scene = scene;
     this.terrain = terrain;
     this.helpers = helpers;
+    this.registry = helpers.registry || null;
     this.pois = [];
     this.poiGroup = new THREE.Group();
     this.poiGroup.visible = false; // shown after terrain loads
@@ -261,16 +262,24 @@ export class Worldspace {
   _placeIronShack(poi, x, y, z) {
     const loader = new FBXLoader();
     const texLoader = this._texLoader;
-    const modelPath = `${ASSET_BASE}/models/environment/buildings/小屋トタン.fbx`;
+
+    // Use registry keys when available, fall back to hard-coded paths.
+    const reg = this.registry;
+    const modelEntry = reg && reg.getModel("japanese_iron_shack");
+    const albedoEntry = reg && reg.getTexture("japanese_iron_shack_albedo");
+    const metallicEntry = reg && reg.getTexture("japanese_iron_shack_metallic");
+    const normalEntry = reg && reg.getTexture("japanese_iron_shack_normal");
+
+    const modelPath = modelEntry ? modelEntry.url : `${ASSET_BASE}/models/environment/buildings/小屋トタン.fbx`;
+    const albedoPath = albedoEntry ? albedoEntry.url : `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_AlbedoTransparency.1001.png`;
+    const metallicPath = metallicEntry ? metallicEntry.url : `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_MetallicSmoothness.1001.png`;
+    const normalPath = normalEntry ? normalEntry.url : `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_Normal.1001.png`;
+
     const poiGroup = this.poiGroup;
 
     // Build a PBR material from the shipped texture maps.
     // roughness/metalness set to 1.0 so texture maps drive the values directly.
     const mat = new THREE.MeshStandardMaterial({ roughness: 1.0, metalness: 1.0 });
-
-    const albedoPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_AlbedoTransparency.1001.png`;
-    const metallicPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_MetallicSmoothness.1001.png`;
-    const normalPath = `${ASSET_BASE}/textures/environment/buildings/小屋トタン_小屋トタン1_Normal.1001.png`;
 
     texLoader.load(albedoPath, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;

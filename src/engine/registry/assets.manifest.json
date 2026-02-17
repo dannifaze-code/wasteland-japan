@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "generatedAt": "2026-02-17T02:50:34.645Z",
+  "sources": [
+    "allfilestomove"
+  ],
+  "models": {
+    "katana_no_case": {
+      "url": "assets/models/weapons/katana_no_case.fbx",
+      "type": "fbx",
+      "tags": [
+        "weapons"
+      ]
+    },
+    "katana": {
+      "url": "assets/models/weapons/katana.fbx",
+      "type": "fbx",
+      "tags": [
+        "weapons"
+      ]
+    }
+  },
+  "textures": {
+    "katana_material_base_color": {
+      "url": "assets/textures/weapons/katana_material_base_color.png",
+      "colorSpace": "sRGB"
+    },
+    "katana_material_height": {
+      "url": "assets/textures/weapons/katana_material_height.png",
+      "colorSpace": "sRGB"
+    },
+    "katana_material_metallic": {
+      "url": "assets/textures/weapons/katana_material_metallic.png",
+      "colorSpace": "sRGB"
+    },
+    "katana_material_mixed_ao": {
+      "url": "assets/textures/weapons/katana_material_mixed_ao.png",
+      "colorSpace": "sRGB"
+    },
+    "katana_material_normal_directx": {
+      "url": "assets/textures/weapons/katana_material_normal_directx.png",
+      "colorSpace": "sRGB"
+    },
+    "katana_material_roughness": {
+      "url": "assets/textures/weapons/katana_material_roughness.png",
+      "colorSpace": "sRGB"
+    }
+  },
+  "audio": {},
+  "data": {}
+}

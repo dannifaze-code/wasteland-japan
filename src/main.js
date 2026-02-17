@@ -1204,6 +1204,9 @@ class Player{
     // Use SkeletonUtils.clone to properly clone SkinnedMesh with independent skeleton
     const tpModel=SkeletonUtils.clone(charScene);
 
+    // Ensure world matrices are up-to-date before measuring bounding box
+    tpModel.updateMatrixWorld(true);
+
     // Auto-scale: measure bounding box, target ~1.75m tall
     const box=new THREE.Box3().setFromObject(tpModel);
     const size=new THREE.Vector3();
@@ -1211,6 +1214,9 @@ class Player{
     const targetHeight=1.75;
     const charScale=targetHeight/Math.max(size.y,0.01);
     tpModel.scale.setScalar(charScale);
+
+    // Rotate model 180° so it faces forward (away from camera in TP view)
+    tpModel.rotation.y=Math.PI;
 
     // Recompute bounding box after scale
     box.setFromObject(tpModel);
@@ -1360,15 +1366,21 @@ class Player{
     // SkeletonUtils.clone ensures SkinnedMesh bones are properly duplicated
     const fpClone=SkeletonUtils.clone(charScene);
 
-    // Scale to fit FP view
+    // Ensure world matrices are up-to-date before measuring bounding box
+    fpClone.updateMatrixWorld(true);
+
+    // Scale to fit FP view — use a fraction of full character height for arms-only viewport
     const box=new THREE.Box3().setFromObject(fpClone);
     const size=new THREE.Vector3();
     box.getSize(size);
-    const armScale=1.75/Math.max(size.y,0.01);
+    const armScale=(1.75/Math.max(size.y,0.01))*0.5;
     fpClone.scale.setScalar(armScale);
 
-    // Position: offset character down and back so only arms visible in viewport
-    fpClone.position.set(0,-1.35,-0.15);
+    // Rotate 180° so model faces away from camera (same direction player looks)
+    fpClone.rotation.y=Math.PI;
+
+    // Position: offset character down and forward so only arms visible in viewport
+    fpClone.position.set(0,-0.5,-0.3);
 
     // Try to hide non-arm parts by bone name for a clean FP look
     // Common bone names for head, spine, legs that should be hidden
@@ -1759,7 +1771,7 @@ class Player{
     this.model.visible=(this.camMode==="tp");
     this.model.position.copy(this.pos);
     this.model.position.y-=1.6;
-    this.model.rotation.y=this.yaw+Math.PI;
+    this.model.rotation.y=this.yaw;
 
     // Third-person weapon visibility
     if(this.tpWeapon) this.tpWeapon.visible=(this.camMode==="tp");

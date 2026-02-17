@@ -1570,6 +1570,7 @@ class Game{
     this.scene.fog=new THREE.Fog(0x0a1018,22,280);
 
     this.fov=70;
+    this.resolutionScale=1.0;
     this.camera=new THREE.PerspectiveCamera(this.fov,innerWidth/innerHeight,0.1,500);
     this.scene.add(this.camera);
 
@@ -1840,6 +1841,17 @@ class Game{
     q.addEventListener("input",()=>this.applyQuality(parseInt(q.value,10)));
     row2.appendChild(q);
 
+    const rowRes=document.createElement("div"); rowRes.className="row";
+    rowRes.innerHTML=`<label>Resolution Scale: <span id="res-val">${Math.round(this.resolutionScale*100)}%</span></label>`;
+    const resSlider=document.createElement("input");
+    resSlider.type="range"; resSlider.min="0.25"; resSlider.max="2.0"; resSlider.step="0.05"; resSlider.value=String(this.resolutionScale);
+    resSlider.addEventListener("input",()=>{
+      this.resolutionScale=parseFloat(resSlider.value);
+      rowRes.querySelector("#res-val").textContent=Math.round(this.resolutionScale*100)+"%";
+      this.applyResolutionScale();
+    });
+    rowRes.appendChild(resSlider);
+
     const row3=document.createElement("div"); row3.className="row";
     row3.innerHTML=`<label>Master Volume</label>`;
     const vol=document.createElement("input");
@@ -1847,7 +1859,7 @@ class Game{
     vol.addEventListener("input",()=>this.audio.setMaster(parseFloat(vol.value)));
     row3.appendChild(vol);
 
-    wrap.append(row1,row2,row3);
+    wrap.append(row1,row2,rowRes,row3);
 
     const row4=document.createElement("div"); row4.className="row";
     row4.innerHTML=`<label>Field of View: <span id="fov-val">${this.fov}</span></label>`;
@@ -1884,19 +1896,26 @@ class Game{
   }
 
   applyQuality(q){
+    this._qualityLevel=q;
+    const rs=this.resolutionScale;
     if(q===0){
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.25)*rs);
       this.renderer.shadowMap.enabled=false;
       this.scene.fog.near=16; this.scene.fog.far=190;
     }else if(q===1){
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6)*rs);
       this.renderer.shadowMap.enabled=true;
       this.scene.fog.near=18; this.scene.fog.far=240;
     }else{
-      this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,2)*rs);
       this.renderer.shadowMap.enabled=true;
       this.scene.fog.near=18; this.scene.fog.far=300;
     }
+    this.renderer.setSize(innerWidth,innerHeight);
+  }
+
+  applyResolutionScale(){
+    this.applyQuality(this._qualityLevel!=null?this._qualityLevel:1);
   }
 
   async startNewGame(){
@@ -2310,9 +2329,14 @@ class Game{
         console.warn("[Katana] model not available — using placeholder geometry.");
         return;
       }
-      // Build PBR material from loaded textures
+      // Build PBR material from loaded textures, with a visible fallback color
       const [baseColor,normal,roughness,metallic,ao]=textures;
-      const matOpts={roughness:1,metalness:1};
+      const hasAnyTexture=baseColor||normal||roughness||metallic||ao;
+      const matOpts={
+        color:0xc0c0c8,
+        roughness:hasAnyTexture?1:0.35,
+        metalness:hasAnyTexture?1:0.7,
+      };
       if(baseColor) matOpts.map=baseColor;
       if(normal) matOpts.normalMap=normal;
       if(roughness) matOpts.roughnessMap=roughness;
@@ -2329,8 +2353,15 @@ class Game{
         }
       });
 
-      // Scale and orient the katana model for first-person view
-      model.scale.setScalar(0.006);
+      // Auto-scale the model to fit first-person view based on bounding box
+      const box=new THREE.Box3().setFromObject(model);
+      const size=new THREE.Vector3();
+      box.getSize(size);
+      const maxDim=Math.max(size.x,size.y,size.z);
+      const targetLength=0.7;
+      const autoScale=maxDim>0?targetLength/maxDim:0.006;
+      model.scale.setScalar(autoScale);
+
       model.rotation.set(0,0,Math.PI/2);
       model.position.set(0,0,0.15);
 
@@ -2342,7 +2373,7 @@ class Game{
       // If katana is currently equipped, refresh visuals
       if(this.player.weapon.id==="katana") this.player._updateFPWeapon();
 
-      console.log("[Katana] model + textures loaded successfully.");
+      console.log("[Katana] model + textures loaded successfully. scale="+autoScale.toFixed(6));
     });
   }
 

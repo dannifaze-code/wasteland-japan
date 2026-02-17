@@ -1021,9 +1021,20 @@ class Player{
     this.skills={toughness:0,quickHands:0,scavenger:0,ironSights:0,mutantHide:0};
     this._lastRadThreshold=0; // for toast tracking
 
-    // Third-person model
+    // Third-person model (placeholder until GLB loaded)
     this.model=this._buildModel();
     this.model.visible=false;
+
+    // Character animation system (populated when GLB loads)
+    this._mixer=null;          // THREE.AnimationMixer
+    this._actions={};          // { idle, walking, running, run03, attack, skill03, dead, crouch }
+    this._currentAction=null;  // currently playing AnimationAction
+    this._prevAnimState="";    // track state to avoid redundant crossfades
+    this._charModelReady=false; // true once GLB model is applied
+
+    // First-person arms from character model (populated when GLB loads)
+    this._fpArms=null;         // Group containing cloned arm meshes
+    this._fpArmsMixer=null;    // separate AnimationMixer for FP arms
 
     // First-person weapon view model
     this.fpWeapon=this._buildFPWeapon();
@@ -1174,6 +1185,311 @@ class Player{
     g.rotation.set(0.2,0.3,0);
     g.visible=true;
     return g;
+  }
+
+  /**
+   * Apply the loaded Meshy AI character GLB model to the player.
+   * Replaces the procedural placeholder with a rigged, animated 3D model.
+   * @param {THREE.Group} charScene   The base character scene from GLB
+   * @param {object}      animClips   { idle, walking, running, run03, attack, skill03, dead } AnimationClip arrays
+   */
+  applyCharacterModel(charScene, animClips){
+    // --- Third-person character model ---
+    const oldModel=this.model;
+    const wasVisible=oldModel.visible;
+    const oldParent=oldModel.parent;
+
+    // Clone the character scene so we have a clean copy for TP
+    const tpModel=charScene.clone();
+
+    // Auto-scale: measure bounding box, target ~1.75m tall
+    const box=new THREE.Box3().setFromObject(tpModel);
+    const size=new THREE.Vector3();
+    box.getSize(size);
+    const targetHeight=1.75;
+    const charScale=targetHeight/Math.max(size.y,0.01);
+    tpModel.scale.setScalar(charScale);
+
+    // Recompute bounding box after scale
+    box.setFromObject(tpModel);
+    const center=new THREE.Vector3();
+    box.getCenter(center);
+    // Offset so the model's feet are at y=0 of the group
+    tpModel.position.y=-box.min.y;
+    tpModel.position.x=-center.x;
+    tpModel.position.z=-center.z;
+
+    // Wrap in a group for positioning (same API as old model)
+    const wrapper=new THREE.Group();
+    wrapper.add(tpModel);
+
+    // Enable shadows on all meshes, optimize materials
+    tpModel.traverse(child=>{
+      if(child.isMesh){
+        child.castShadow=true;
+        child.receiveShadow=false;
+        child.frustumCulled=true;
+        if(child.material){
+          child.material.side=THREE.FrontSide;
+        }
+      }
+    });
+
+    // Re-create arm pivots on wrapper for TP weapon attachment
+    const armRPivot=new THREE.Group();
+    armRPivot.position.set(0.35,1.25,0); // approximate shoulder position
+    wrapper.add(armRPivot);
+    const armLPivot=new THREE.Group();
+    armLPivot.position.set(-0.35,1.25,0);
+    wrapper.add(armLPivot);
+
+    // Migrate TP weapon from old pivot to new
+    if(this.tpWeapon && this._armRPivot){
+      this._armRPivot.remove(this.tpWeapon);
+      armRPivot.add(this.tpWeapon);
+    }
+
+    this._armRPivot=armRPivot;
+    this._armLPivot=armLPivot;
+
+    // Swap in the scene
+    wrapper.visible=wasVisible;
+    wrapper.position.copy(oldModel.position);
+    wrapper.rotation.copy(oldModel.rotation);
+    if(oldParent){
+      oldParent.remove(oldModel);
+      oldParent.add(wrapper);
+    }
+    this.model=wrapper;
+    this._tpCharModel=tpModel; // reference for animation
+
+    // --- Animation Mixer (third-person) ---
+    this._mixer=new THREE.AnimationMixer(tpModel);
+    this._actions={};
+
+    // Helper to extract the first AnimationClip from a loaded GLTF result
+    const addClip=(name, clips, loopMode)=>{
+      if(!clips||clips.length===0) return;
+      const clip=clips[0];
+      clip.name=name; // normalize name
+      const action=this._mixer.clipAction(clip);
+      action.clampWhenFinished=true;
+      if(loopMode!==undefined) action.loop=loopMode;
+      this._actions[name]=action;
+    };
+
+    addClip("idle",    animClips.idle,    THREE.LoopRepeat);
+    addClip("walking", animClips.walking, THREE.LoopRepeat);
+    addClip("running", animClips.running, THREE.LoopRepeat);
+    addClip("run03",   animClips.run03,   THREE.LoopRepeat);
+    addClip("attack",  animClips.attack,  THREE.LoopOnce);
+    addClip("skill03", animClips.skill03, THREE.LoopOnce);
+    addClip("dead",    animClips.dead,    THREE.LoopOnce);
+
+    // Synthesize a crouch animation from idle (scaled & lowered)
+    if(this._actions.idle){
+      const idleClip=this._actions.idle.getClip();
+      const crouchClip=idleClip.clone();
+      crouchClip.name="crouch";
+      const crouchAction=this._mixer.clipAction(crouchClip);
+      crouchAction.clampWhenFinished=true;
+      crouchAction.loop=THREE.LoopRepeat;
+      crouchAction.timeScale=0.7; // slightly slower for crouched idle
+      this._actions.crouch=crouchAction;
+    }
+
+    // Start with idle
+    if(this._actions.idle){
+      this._actions.idle.play();
+      this._currentAction=this._actions.idle;
+      this._prevAnimState="idle";
+    }
+
+    // --- First-person arms ---
+    this._buildFPArmsFromModel(charScene, animClips);
+
+    this._charModelReady=true;
+    console.log("[Player] Character model applied. Scale="+charScale.toFixed(4)+", animations:", Object.keys(this._actions).join(", "));
+  }
+
+  /**
+   * Build first-person arms by cloning arm-related meshes from the character model.
+   * Creates a clean FP arm view attached to the camera.
+   */
+  _buildFPArmsFromModel(charScene, animClips){
+    // Remove old placeholder FP pipboy arm mesh (the skin-colored box)
+    // We'll rebuild it with the character model's arms
+
+    const fpArmsGroup=new THREE.Group();
+    fpArmsGroup.name="fpArms";
+
+    // Clone the full character for FP arms with skeletal structure intact
+    const fpClone=charScene.clone();
+
+    // Scale to fit FP view
+    const box=new THREE.Box3().setFromObject(fpClone);
+    const size=new THREE.Vector3();
+    box.getSize(size);
+    const armScale=1.75/Math.max(size.y,0.01);
+    fpClone.scale.setScalar(armScale);
+
+    // Position: we show only the arms portion - offset character down and back
+    // so only arms are visible in the viewport
+    fpClone.position.set(0,-1.35,-0.15);
+
+    // Hide head and torso meshes to show only arms
+    // We'll hide everything above shoulder height and below hip
+    fpClone.traverse(child=>{
+      if(child.isMesh){
+        child.castShadow=false;
+        child.receiveShadow=false;
+        child.frustumCulled=false; // FP elements should always render
+        if(child.material){
+          child.material=child.material.clone();
+          child.material.side=THREE.FrontSide;
+          child.material.depthWrite=true;
+        }
+      }
+    });
+
+    fpArmsGroup.add(fpClone);
+
+    // Set up FP arms animation mixer
+    this._fpArmsMixer=new THREE.AnimationMixer(fpClone);
+    this._fpArmsActions={};
+
+    const addFPClip=(name, clips, loopMode)=>{
+      if(!clips||clips.length===0) return;
+      const clip=clips[0].clone();
+      clip.name=name;
+      const action=this._fpArmsMixer.clipAction(clip);
+      action.clampWhenFinished=true;
+      if(loopMode!==undefined) action.loop=loopMode;
+      this._fpArmsActions[name]=action;
+    };
+
+    addFPClip("idle",    animClips.idle,    THREE.LoopRepeat);
+    addFPClip("walking", animClips.walking, THREE.LoopRepeat);
+    addFPClip("running", animClips.running, THREE.LoopRepeat);
+    addFPClip("attack",  animClips.attack,  THREE.LoopOnce);
+    addFPClip("skill03", animClips.skill03, THREE.LoopOnce);
+
+    // Start FP arms with idle
+    if(this._fpArmsActions.idle){
+      this._fpArmsActions.idle.play();
+      this._currentFPAction=this._fpArmsActions.idle;
+    }
+
+    // Add to camera
+    this.camera.add(fpArmsGroup);
+    this._fpArms=fpArmsGroup;
+    this._fpCharClone=fpClone; // reference for animation updates
+  }
+
+  /**
+   * Update character animation state based on player movement/actions.
+   * Called each frame from updateModels().
+   */
+  _updateCharacterAnimation(dt){
+    if(!this._charModelReady||!this._mixer) return;
+
+    // Determine desired animation state
+    const planar=Math.hypot(this.vel.x,this.vel.z);
+    const isDead=this.hp<=0;
+    let desired="idle";
+
+    if(isDead){
+      desired="dead";
+    }else if(this.crouch>0.5){
+      desired="crouch";
+    }else if(planar>3.5){
+      desired="running";
+    }else if(planar>0.5){
+      desired="walking";
+    }
+
+    // Handle attack/skill animations (one-shot, triggered externally)
+    if(this._playingAttack) desired=this._attackAnimName||"attack";
+
+    // Crossfade to new animation if state changed
+    if(desired!==this._prevAnimState && this._actions[desired]){
+      const newAction=this._actions[desired];
+      const oldAction=this._currentAction;
+
+      if(oldAction && oldAction!==newAction){
+        newAction.reset();
+        newAction.play();
+        oldAction.crossFadeTo(newAction,0.25,true);
+      }else{
+        newAction.reset();
+        newAction.play();
+      }
+
+      this._currentAction=newAction;
+      this._prevAnimState=desired;
+
+      // If attack or skill03 finished, return to previous state
+      if(desired==="attack"||desired==="skill03"||desired==="dead"){
+        if(desired!=="dead"){
+          newAction.clampWhenFinished=false;
+          const onFinish=()=>{
+            this._playingAttack=false;
+            this._mixer.removeEventListener("finished",onFinish);
+          };
+          this._mixer.addEventListener("finished",onFinish);
+        }
+      }
+    }
+
+    // Apply crouch visual: scale the model's Y slightly when crouching
+    if(this._tpCharModel && !isDead){
+      const crouchScale=1.0-this.crouch*0.25;
+      this._tpCharModel.scale.y=this._tpCharModel.scale.x*crouchScale;
+    }
+
+    // Update animation mixer
+    this._mixer.update(dt);
+
+    // Update FP arms animation to match (mirrored subset)
+    if(this._fpArmsMixer){
+      // Sync FP arms animation state
+      let fpDesired="idle";
+      if(planar>3.5) fpDesired="running";
+      else if(planar>0.5) fpDesired="walking";
+      if(this._playingAttack){
+        const atkName=this._attackAnimName||"attack";
+        if(this._fpArmsActions[atkName]) fpDesired=atkName;
+      }
+
+      if(fpDesired!==this._prevFPAnimState && this._fpArmsActions[fpDesired]){
+        const newAct=this._fpArmsActions[fpDesired];
+        const oldAct=this._currentFPAction;
+        if(oldAct && oldAct!==newAct){
+          newAct.reset();
+          newAct.play();
+          oldAct.crossFadeTo(newAct,0.2,true);
+        }else{
+          newAct.reset();
+          newAct.play();
+        }
+        this._currentFPAction=newAct;
+        this._prevFPAnimState=fpDesired;
+      }
+
+      this._fpArmsMixer.update(dt);
+    }
+  }
+
+  /**
+   * Trigger an attack animation (called when firing melee weapon).
+   * @param {string} animName  "attack" or "skill03"
+   */
+  playAttackAnimation(animName){
+    if(!this._charModelReady) return;
+    this._playingAttack=true;
+    this._attackAnimName=animName||"attack";
+    this._prevAnimState=""; // force crossfade
+    if(this._prevFPAnimState) this._prevFPAnimState=""; // force FP crossfade too
   }
   weight(){return invWeight(this.inv);}
   effectiveMaxHP(){
@@ -1410,6 +1726,14 @@ class Player{
       this._armLPivot.rotation.x=aimRot;
     }
 
+    // Update character skeletal animations (TP + FP arms)
+    this._updateCharacterAnimation(dt);
+
+    // First-person arms visibility (from character model)
+    if(this._fpArms){
+      this._fpArms.visible=(this.camMode==="fp")&&(this.pipboyAnim<0.3);
+    }
+
     // Pip-Boy animation lerp
     const pipTarget=this.pipboyActive?1:0;
     this.pipboyAnim=lerp(this.pipboyAnim,pipTarget,8*dt);
@@ -1516,6 +1840,13 @@ class Player{
       // Melee swing — no muzzle flash, no casings
       env.audio.click(); // TODO: replace with proper melee swing sound
       env.shakeKick(0.06);
+      // Trigger katana-specific animation (attack or skill03 alternating)
+      if(id==="katana"){
+        const useSkill=this._actions&&this._actions.skill03&&Math.random()<0.3;
+        this.playAttackAnimation(useSkill?"skill03":"attack");
+      }else{
+        this.playAttackAnimation("attack");
+      }
     }else{
       env.audio.gun(id);
       env.shakeKick(id==="shotgun"?0.18:0.09);
@@ -1595,6 +1926,8 @@ class Game{
       this.assetRegistry.printSummary();
       // Load katana model and PBR textures from registry
       this._loadKatanaAssets();
+      // Load new Meshy AI player character model and animations
+      this._loadPlayerCharacter();
     }).catch(e=>console.warn("[AssetRegistry]",e));
     this.propFactory=new PropFactory(this.assetManager);
     this.propFactory.preload(Object.keys(WorldPropDefs)).catch(e=>console.warn("[PropFactory] preload:",e));
@@ -2374,6 +2707,77 @@ class Game{
       if(this.player.weapon.id==="katana") this.player._updateFPWeapon();
 
       console.log("[Katana] model + textures loaded successfully. scale="+autoScale.toFixed(6));
+    });
+  }
+
+  /**
+   * Load the Meshy AI character model and all animation clips, then apply
+   * them to the player. The model replaces the procedural placeholder in
+   * both first-person (arms) and third-person (full body) views.
+   */
+  _loadPlayerCharacter(){
+    const reg=this.assetRegistry;
+    const mgr=this.assetManager;
+
+    // Resolve URLs from manifest (with fallbacks)
+    const charUrl=(reg.getModel("player_character")||{}).url||"assets/models/characters/player/Meshy_AI_Character_output.glb";
+
+    const animDefs={
+      idle:     (reg.getModel("player_anim_idle")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Idle_withSkin.glb",
+      walking:  (reg.getModel("player_anim_walking")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Walking_withSkin.glb",
+      running:  (reg.getModel("player_anim_running")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Running_withSkin.glb",
+      run03:    (reg.getModel("player_anim_run03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Run_03_withSkin.glb",
+      attack:   (reg.getModel("player_anim_attack")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Attack_withSkin.glb",
+      skill03:  (reg.getModel("player_anim_skill03")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Skill_03_withSkin.glb",
+      dead:     (reg.getModel("player_anim_dead")||{}).url||"assets/models/characters/player/Meshy_AI_Animation_Dead_withSkin.glb",
+    };
+
+    // Load the base character model with scene
+    const charPromise=mgr.loadGLTF("player_character",charUrl).catch(e=>{
+      console.warn("[PlayerChar] base model load failed:",e);
+      return null;
+    });
+
+    // Load all animation GLBs in parallel (each contains one animation clip with skin)
+    const animPromises={};
+    for(const[name,url] of Object.entries(animDefs)){
+      animPromises[name]=mgr.loadGLTF("player_anim_"+name,url).then(gltf=>{
+        return gltf.animations||[];
+      }).catch(e=>{
+        console.warn(`[PlayerChar] animation "${name}" load failed:`,e);
+        return [];
+      });
+    }
+
+    // Wait for everything to load
+    const animKeys=Object.keys(animPromises);
+    const animPromiseArr=animKeys.map(k=>animPromises[k]);
+
+    Promise.all([charPromise,...animPromiseArr]).then(([charGltf,...animResults])=>{
+      if(!charGltf){
+        console.warn("[PlayerChar] character model not available — keeping placeholder.");
+        return;
+      }
+
+      // Build animation clips object
+      const animClips={};
+      animKeys.forEach((name,i)=>{
+        animClips[name]=animResults[i];
+      });
+
+      // Apply to player
+      const oldParent=this.player.model.parent;
+      this.player.applyCharacterModel(charGltf.scene, animClips);
+
+      // Re-add to scene if the parent changed
+      if(oldParent && !this.player.model.parent){
+        oldParent.add(this.player.model);
+      }else if(!this.player.model.parent){
+        this.scene.add(this.player.model);
+      }
+
+      console.log("[PlayerChar] Meshy AI character loaded successfully with",
+        Object.keys(animClips).filter(k=>animClips[k].length>0).length, "animations.");
     });
   }
 

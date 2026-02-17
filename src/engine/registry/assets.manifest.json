@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "generatedAt": "2026-02-17T02:50:34.645Z",
+  "version": 2,
+  "generatedAt": "2026-02-17T17:00:00.000Z",
   "sources": [
     "allfilestomove"
   ],
@@ -20,6 +20,46 @@
         "weapons",
         "melee"
       ]
+    },
+    "player_character": {
+      "url": "assets/models/characters/player/Meshy_AI_Character_output.glb",
+      "type": "glb",
+      "tags": ["characters", "player"]
+    },
+    "player_anim_idle": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Idle_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_walking": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Walking_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_running": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Running_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_run03": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Run_03_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_attack": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Attack_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_skill03": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Skill_03_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
+    },
+    "player_anim_dead": {
+      "url": "assets/models/characters/player/Meshy_AI_Animation_Dead_withSkin.glb",
+      "type": "glb",
+      "tags": ["characters", "player", "animation"]
     }
   },
   "textures": {

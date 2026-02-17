@@ -68,6 +68,29 @@ export class AssetManager {
   }
 
   /**
+   * Load a GLTF/GLB file and return the *full* GLTF result (scene + animations).
+   *
+   * Unlike loadModel (which returns only the scene), this preserves
+   * animation clips so callers can feed them into an AnimationMixer.
+   *
+   * @param {string}  key   Unique cache key.
+   * @param {string}  url   URL / path to the .glb / .gltf file.
+   * @returns {Promise<{scene: THREE.Group, animations: THREE.AnimationClip[]}>}
+   */
+  loadGLTF(key, url) {
+    return this._loadCached(key, () => {
+      return new Promise((resolve, reject) => {
+        this._gltfLoader.load(
+          url,
+          (gltf) => resolve({ scene: gltf.scene, animations: gltf.animations || [] }),
+          undefined,
+          (err) => reject(new Error(`GLTFLoader failed for ${url}: ${err}`))
+        );
+      });
+    });
+  }
+
+  /**
    * Load a texture.
    *
    * @param {string}  key   Unique cache key.
